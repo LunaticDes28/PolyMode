@@ -78,3 +78,12 @@ namespace Polyquest
         }
     }
 }
+
+                // Convert the IL2CPP string array to a manageable C# List
+                cachedGameModes = items.ToList();
+                
+                // Directly add the hardcoded mode matching your selection check
+                cachedGameModes.Add("Conquest");
+                
+                // Reassign back to the referenced IL2CPP array for the UI to draw
+                items = cachedGameModes.ToArray();

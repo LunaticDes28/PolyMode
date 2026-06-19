@@ -10,7 +10,7 @@ namespace Polyquest
     public static class GameSetup
     {
         // Tracks our modified string layout so OnGameModeChanged can read it instantly
-        private static List<string> cachedGameModes = new List<string>();
+        // private static List<string> cachedGameModes = new List<string>();
         private static bool isConquestSelected = false;
 
         // ====================== CONQUEST MODE ADDITION ======================
@@ -32,14 +32,9 @@ namespace Polyquest
             {
                 Loader.modLogger?.LogInfo("[Conquest] List of gamemodes found");
 
-                // Convert the IL2CPP string array to a manageable C# List
-                cachedGameModes = items.ToList();
-                
-                // Directly add the hardcoded mode matching your selection check
-                cachedGameModes.Add("Conquest");
-                
-                // Reassign back to the referenced IL2CPP array for the UI to draw
-                items = cachedGameModes.ToArray();
+                List<string> list = items.ToList();
+                list.Add("Conquest");
+                items = list.ToArray();
             }
             return true;
         }
@@ -49,19 +44,38 @@ namespace Polyquest
         [HarmonyPatch(typeof(GameSetupScreen), nameof(GameSetupScreen.OnGameModeChanged))]
         private static bool GameSetupScreen_OnGameModeChanged_Prefix(GameSetupScreen __instance, ref int index)
         {
+            Loader.modLogger?.LogInfo("[Conquest] Game mode changed");
             string selectedName = string.Empty;
-            if (index >= 0 && index < cachedGameModes.Count)
+
+            // Find the UI component directly from the screen instance
+            UIHorizontalList gameModeList = null;
+            if (__instance?.rows != null)
             {
-                selectedName = cachedGameModes[index];
+                foreach (GameObject row in __instance.rows)
+                {
+                    if (row != null && row.TryGetComponent<UIHorizontalList>(out var list) && list.HeaderKey == "gamesettings.mode")
+                    {
+                        gameModeList = list;
+                        break;
+                    }
+                }
+            }
+
+            // Read the text layout directly from the active game component
+            if (gameModeList != null && gameModeList.items != null && index >= 0 && index < gameModeList.items.Length)
+            {
+                var targetItem = gameModeList.items[index];
+                if (targetItem != null && targetItem.text != null)
+                {
+                    selectedName = targetItem.text.ToString();
+                    Loader.modLogger?.LogInfo("[Conquest] Cached: " + selectedName);
+                }
             }
 
             if (!string.IsNullOrEmpty(selectedName) && selectedName.Equals("Conquest", System.StringComparison.OrdinalIgnoreCase))
             {
-                // Set a flag telling our Postfix that Conquest was chosen
                 isConquestSelected = true;
-
-                // Change index to 0 so the native game code runs smoothly without throwing an out-of-bounds error
-                index = 0; 
+                index = 0; // Prevent out-of-bounds native crash
             }
             else
             {
@@ -76,11 +90,9 @@ namespace Polyquest
         [HarmonyPatch(typeof(GameSetupScreen), nameof(GameSetupScreen.OnGameModeChanged))]
         private static void GameSetupScreen_OnGameModeChanged_Postfix(GameSetupScreen __instance, int index)
         {
-            // This runs AFTER the game has processed its logic. 
-            // If the flag is true, we now safely force our custom mode data.
             if (isConquestSelected)
             {
-                Loader.modLogger?.LogInfo("[Conquest] Mode successfully forced in Postfix!");
+                Loader.modLogger?.LogInfo("[Conquest] Custom game mode applied successfully.");
 
                 var settings = GameManager.PreliminaryGameSettings;
                 if (settings != null)
