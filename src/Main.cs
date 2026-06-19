@@ -11,10 +11,6 @@ namespace Polyquest
 {
     public static class Main
     {
-        // ... your existing code (GetBasicTile, climate methods, map loading, etc.) ...
-
-        // ====================== CONQUEST MODE - ESSENTIAL ======================
-
         [HarmonyPostfix]
         [HarmonyPatch(typeof(GameRules), nameof(GameRules.LoadPreset))]
         private static void GameRules_LoadPreset_Postfix(GameRules __instance, GameMode gameMode)
@@ -38,8 +34,6 @@ namespace Polyquest
         {
             EnumCache<GameMode>.GetType("conquest");
         }
-
-        // ====================== CONQUEST CITY DISTRIBUTION ======================
 
         [HarmonyPrefix]
         [HarmonyPatch(typeof(MapGenerator), nameof(MapGenerator.GenerateInternal))]
@@ -83,7 +77,6 @@ namespace Polyquest
             }
         }
 
-        // Custom shuffle for List<int>
         private static void ShuffleList(List<int> list, System.Random random = null)
         {
             if (random == null) random = new System.Random();
@@ -109,8 +102,6 @@ namespace Polyquest
             player.cities++;
         }
 
-        // ====================== TECH COST INCREASE WITH TIME (CONQUEST) ======================
-
         [HarmonyPostfix]
         [HarmonyPatch(typeof(GameLogicData), nameof(GameLogicData.GetTechPrice))]
         private static void Conquest_TechCost_Postfix(GameLogicData __instance, TechData techData, PlayerState playerState, GameState state, ref int __result)
@@ -128,8 +119,6 @@ namespace Polyquest
 
             __result = (int)Math.Ceiling((double)(__result + addition));
         }
-
-        // ====================== CITY DESTRUCTION (CONQUEST) ======================
 
         [HarmonyPrefix]
         [HarmonyPatch(typeof(CaptureCityAction), nameof(CaptureCityAction.ExecuteDefault))]   // Change if method name is different
