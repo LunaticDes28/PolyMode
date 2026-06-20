@@ -109,19 +109,19 @@ namespace Polyquest
                 return;
             }
 
-            try
-            {
+            //try
+            //{
                 Loader.modLogger?.LogInfo("[Conquest-UI] Attempting to bind custom enums onto unmanaged backend parameters cache...");
                 
-                settings.BaseGameMode = (GameMode)8;
-                settings.RulesGameMode = (GameMode)8;
+                settings.BaseGameMode = EnumCache<GameMode>.GetType("conquest");
+                settings.RulesGameMode = EnumCache<GameMode>.GetType("conquest");
                 
-                Loader.modLogger!.LogInfo($"[Conquest-UI] SUCCESS: Backend rules configured! BaseGameMode: {settings.BaseGameMode} | RulesGameMode: {settings.RulesGameMode}");
-            }
-            catch (Exception ex)
-            {
-                Loader.modLogger!.LogError($"[Conquest-UI] System Crash intercepted inside settings injection block: {ex}");
-            }
+                Loader.modLogger?.LogInfo($"[Conquest-UI] SUCCESS: Backend rules configured! BaseGameMode: {settings.BaseGameMode} | RulesGameMode: {settings.RulesGameMode}");
+            //}
+            //catch (Exception ex)
+            //{
+                //Loader.modLogger?.LogError($"[Conquest-UI] System Crash intercepted inside settings injection block: {ex}");
+            //}
         }
     }
 }
