@@ -37,14 +37,14 @@ namespace Polyquest
             return true;
         }
 
-        [HarmonyPrefix]
+        [HarmonyPostfix]
         [HarmonyPatch(typeof(GameSetupScreen), nameof(GameSetupScreen.OnGameModeChanged))]
         public static void OnGameModeChanged_Postfix(GameSetupScreen __instance, int index)
         {
             ProcessGameModeChange(__instance, index);
         }
 
-        [HarmonyPrefix]
+        [HarmonyPostfix]
         [HarmonyPatch(typeof(GameSetupScreen), nameof(GameSetupScreen.OnCustomGameModeChanged))]
         public static void OnCustomGameModeChanged_Postfix(GameSetupScreen __instance, int index)
         {
