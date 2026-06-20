@@ -29,7 +29,7 @@ namespace Polyquest
         }
 
         [HarmonyPostfix]
-        [HarmonyPatch(nameof(MapGenerator.GenerateInternal))]
+        [HarmonyPatch(typeof(MapGenerator), nameof(MapGenerator.GenerateInternal))]
         private static void GenerateInternal_Postfix(MapGenerator __instance, GameState gameState, MapGeneratorSettings settings)
         {
             bool isConquest = gameState.Settings.RulesGameMode == EnumCache<GameMode>.GetType("conquest") || 
