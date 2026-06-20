@@ -19,22 +19,73 @@ namespace Polyquest
             GameSetupScreen __instance, 
             string headerKey, 
             ref Il2CppStringArray items, 
-            Il2CppSystem.Action<int> indexChangedCallback, 
+            ref Il2CppSystem.Action<int> indexChangedCallback, // Added 'ref' to modify the callback target
             int selectedIndex, 
             RectTransform parent, 
             int enabledItemCount, 
             Il2CppSystem.Action onClickDisabledItemCallback)
         {
-            Loader.modLogger?.LogInfo("[Conquest] CreateHorizontalList called");
             if (headerKey == "gamesettings.mode") 
             {
-                Loader.modLogger?.LogInfo("[Conquest] List of gamemodes found");
+                Loader.modLogger?.LogInfo("[Conquest] Intercepted game settings mode list creation.");
 
+                // 1. Expand the array to include your custom text label layout
                 List<string> list = items.ToList();
                 list.Add("Conquest");
                 items = list.ToArray();
+
+                // Get the exact integer index assigned to our custom mode position
+                int customModeIndex = list.Count - 1; 
+
+                // 2. Intercept the callback event router by wrapping it
+                var originalCallback = indexChangedCallback;
+                indexChangedCallback = new Action<int>((clickedIndex) => 
+                {
+                    Loader.modLogger?.LogInfo($"[Conquest] UI Callback triggered. Clicked index: {clickedIndex}");
+
+                    // If the user clicked our custom appended index layout item
+                    if (clickedIndex == customModeIndex)
+                    {
+                        ProcessCustomModeSelection(__instance);
+                    }
+                    else
+                    {
+                        // Pass standard clicks back to the native game engine safely
+                        originalCallback?.Invoke(clickedIndex);
+                    }
+                });
             }
             return true;
+        }
+
+        private static void ProcessCustomModeSelection(GameSetupScreen instance)
+        {
+            if (_isProcessingCustomMode) return;
+
+            var settings = GameManager.PreliminaryGameSettings;
+            if (settings != null)
+            {
+                try
+                {
+                    _isProcessingCustomMode = true;
+
+                    // Apply custom configurations directly
+                    settings.BaseGameMode = EnumCache<GameMode>.GetType("conquest");
+                    settings.RulesGameMode = EnumCache<GameMode>.GetType("conquest");
+
+                    // Force the UI elements to redraw based on our fresh backend state
+                    instance.RefreshInfo();
+                    Loader.modLogger!.LogInfo("[Conquest] Custom game mode applied successfully via callback hook.");
+                }
+                catch (Exception ex)
+                {
+                    Loader.modLogger!.LogError($"[Conquest] Failed to safely refresh UI configurations: {ex}");
+                }
+                finally
+                {
+                    _isProcessingCustomMode = false;
+                }
+            }
         }
 
         [HarmonyPostfix]

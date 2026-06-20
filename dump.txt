@@ -120,3 +120,27 @@ namespace Polyquest
                 }
             }
         }
+
+        [HarmonyPrefix]
+        [HarmonyPatch(typeof(GameSetupScreen), nameof(GameSetupScreen.CreateHorizontalList))]
+        private static bool GameSetupScreen_CreateHorizontalList(
+            GameSetupScreen __instance, 
+            string headerKey, 
+            ref Il2CppStringArray items, 
+            Il2CppSystem.Action<int> indexChangedCallback, 
+            int selectedIndex, 
+            RectTransform parent, 
+            int enabledItemCount, 
+            Il2CppSystem.Action onClickDisabledItemCallback)
+        {
+            Loader.modLogger?.LogInfo("[Conquest] CreateHorizontalList called");
+            if (headerKey == "gamesettings.mode") 
+            {
+                Loader.modLogger?.LogInfo("[Conquest] List of gamemodes found");
+
+                List<string> list = items.ToList();
+                list.Add("Conquest");
+                items = list.ToArray();
+            }
+            return true;
+        }
