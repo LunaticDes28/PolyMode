@@ -10,7 +10,6 @@ namespace Polyquest
     public static class GameSetup
     {
         // Tracks our modified string layout so OnGameModeChanged can read it instantly
-        // private static List<string> cachedGameModes = new List<string>();
         private static bool isConquestSelected = false;
 
         // ====================== CONQUEST MODE ADDITION ======================
@@ -39,66 +38,34 @@ namespace Polyquest
             return true;
         }
 
-        // ====================== INTERCEPT THE CRASH (PREFIX) ======================
-        [HarmonyPrefix]
-        [HarmonyPatch(typeof(GameSetupScreen), nameof(GameSetupScreen.OnGameModeChanged))]
-        private static bool GameSetupScreen_OnGameModeChanged_Prefix(GameSetupScreen __instance, ref int index)
-        {
-            Loader.modLogger?.LogInfo("[Conquest] Game mode changed");
-            string selectedName = string.Empty;
-
-            // Find the UI component directly from the screen instance
-            UIHorizontalList gameModeList = null;
-            if (__instance?.rows != null)
-            {
-                foreach (GameObject row in __instance.rows)
-                {
-                    if (row != null && row.TryGetComponent<UIHorizontalList>(out var list) && list.HeaderKey == "gamesettings.mode")
-                    {
-                        gameModeList = list;
-                        break;
-                    }
-                }
-            }
-
-            // Read the text layout directly from the active game component
-            if (gameModeList != null && gameModeList.items != null && index >= 0 && index < gameModeList.items.Length)
-            {
-                var targetItem = gameModeList.items[index];
-                if (targetItem != null && targetItem.text != null)
-                {
-                    selectedName = targetItem.text.ToString();
-                    Loader.modLogger?.LogInfo("[Conquest] Cached: " + selectedName);
-                }
-            }
-
-            if (!string.IsNullOrEmpty(selectedName) && selectedName.Equals("Conquest", System.StringComparison.OrdinalIgnoreCase))
-            {
-                isConquestSelected = true;
-                index = 0; // Prevent out-of-bounds native crash
-            }
-            else
-            {
-                isConquestSelected = false;
-            }
-
-            return true; 
-        }
-
-        // ====================== APPLY CONQUEST DATA (POSTFIX) ======================
+        // ====================== INTERCEPT THE CRASH ======================
         [HarmonyPostfix]
         [HarmonyPatch(typeof(GameSetupScreen), nameof(GameSetupScreen.OnGameModeChanged))]
         private static void GameSetupScreen_OnGameModeChanged_Postfix(GameSetupScreen __instance, int index)
         {
-            if (isConquestSelected)
-            {
-                Loader.modLogger?.LogInfo("[Conquest] Custom game mode applied successfully.");
+            Loader.modLogger!.LogInfo("[Conquest] Game mode changed");
+            Loader.modLogger!.LogInfo(index);
 
+            // Use the explicit game settings to determine the actual game type structure
+            int adjustedIndex = index;
+            if (GameManager.PreliminaryGameSettings.GameType != GameType.Matchmaking)
+            {
+                adjustedIndex++;
+            }
+
+            // Check if index points outside standard game enum values, indicating your custom mode selection
+            if (adjustedIndex >= Enum.GetValues<GameMode>().Length)
+            {
                 var settings = GameManager.PreliminaryGameSettings;
                 if (settings != null)
                 {
+                    // Directly apply the custom mode from your internal mod configuration
                     settings.BaseGameMode = EnumCache<GameMode>.GetType("conquest");
                     settings.RulesGameMode = EnumCache<GameMode>.GetType("conquest");
+                    
+                    // Re-draw screen details utilizing the game instance's primary lifecycle method
+                    __instance.RefreshInfo();
+                    Loader.modLogger!.LogInfo("[Conquest] Custom game mode applied successfully");
                 }
             }
         }
