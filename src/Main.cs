@@ -175,7 +175,8 @@ namespace Polyquest
                 TribeData tribeData;
                 if (state.GameLogicData.TryGetData(player.tribe, out tribeData) && tribeData != null)
                 {
-                    string generatedName = MapDataExtensions.GenerateCityName(state, tile.coordinates, tribeData.language);
+                    // if (state.GameLogicData.TryGetData(player.skinType, out skin) && skin != null) return;
+                    string generatedName = MapDataExtensions.GenerateCityName(state, tile.coordinates, tribeData, player.skinType);
                     
                     if (tile.improvement != null)
                     {

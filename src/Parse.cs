@@ -228,7 +228,7 @@ public static class Parse
         {
             var item = list[i];
 
-            var field = item.GetType().GetField("type");
+            var field = item?.GetType().GetField("type");
             if (field == null)
                 continue;
 

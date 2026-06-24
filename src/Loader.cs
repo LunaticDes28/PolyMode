@@ -23,6 +23,7 @@ namespace Polyquest
             Harmony.CreateAndPatchAll(typeof(Main));
             Harmony.CreateAndPatchAll(typeof(Loader));
             Harmony.CreateAndPatchAll(typeof(UI));
+            Harmony.CreateAndPatchAll(typeof(UI_2));
             Harmony.CreateAndPatchAll(typeof(Parse));
 
             RegisterCustomGameMode("conquest");
