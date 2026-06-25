@@ -35,10 +35,10 @@ namespace Polyquest
         public static void OnGameModeChanged_Postfix(GameSetupScreen_UI2 __instance, int index)
         {
             Loader.modLogger?.LogInfo($"[Conquest-UI] OnGameModeChanged Postfix event captured. Raw index: {index}");
-            EvaluateGameSetupScreenState(__instance);
+            EvaluateGameSetupScreenState(__instance, index);
         }
 
-        private static void EvaluateGameSetupScreenState(GameSetupScreen_UI2 instance)
+        private static void EvaluateGameSetupScreenState(GameSetupScreen_UI2 instance, int index)
         {
             Loader.modLogger?.LogInfo("[Conquest-UI] Inspecting visual UI elements selection components...");
 
@@ -48,15 +48,15 @@ namespace Polyquest
                 return;
             }
 
-            int activeVisualIndex = instance.gameModeData.selectedObject;
-            Loader.modLogger?.LogInfo($"[Conquest-UI] Current active menu highlighted item index reads: {activeVisualIndex}");
+            // int activeVisualIndex = instance.gameModeData.selectedObject;
+            Loader.modLogger?.LogInfo($"[Conquest-UI] Current active menu highlighted item index reads: {index}");
 
-            Loader.modLogger?.LogInfo($"[Conquest-UI] Test Values: {instance.gameModeData.selectedObject}");
-            Loader.modLogger?.LogInfo($"[Conquest-UI] Test Values: {instance.gameModeData.labels}");
+            // Loader.modLogger?.LogInfo($"[Conquest-UI] Test Values: {instance.gameModeData.selectedObject}");
+            Loader.modLogger?.LogInfo($"[Conquest-UI] Test Values: {instance.gameModeData.labels.Count}");
             
-            if (activeVisualIndex >= 0 && activeVisualIndex < instance.gameModeData.labels.Count)
+            if (index >= 0 && index < instance.gameModeData.labels.Count)
             {
-                var activeItem = instance.gameModeData.labels[activeVisualIndex];
+                var activeItem = instance.gameModeData.labels[index];
                 if (activeItem != null && activeItem != null)
                 {
                     string selectedText = activeItem.ToString();
@@ -82,7 +82,7 @@ namespace Polyquest
             }
             else
             {
-                Loader.modLogger?.LogWarning($"[Conquest-UI] Active index {activeVisualIndex} is out of bounds (0 to {instance.gameModeData.labels.Count - 1}). skipping.");
+                Loader.modLogger?.LogWarning($"[Conquest-UI] Active index {index} is out of bounds (0 to {instance.gameModeData.labels.Count - 1}). skipping.");
             }
         }
     }
