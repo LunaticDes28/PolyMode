@@ -1,0 +1,16 @@
+        [HarmonyPrefix]
+        [HarmonyPatch(typeof(GameSetupScreenView), nameof(GameSetupScreenView.SetShowGameModes))]
+        private static bool GameSetupScreenView_SetShowGameModes(string header, List<string> labels, int selected)
+        {
+            Loader.modLogger?.LogInfo($"[Conquest-UI] CreateHorizontalList intercepted. Checking headerKey: '{header}'");
+
+            if (header == "gamesettings.mode") 
+            {
+                Loader.modLogger?.LogInfo("[Conquest-UI] Target game mode row found! Appending 'Conquest' string label...");
+                
+                labels.Add("Conquest");
+                
+                Loader.modLogger?.LogInfo($"[Conquest-UI] Conquest text injected successfully. Total item options: {labels.Count}");
+            }
+            return true;
+        }
