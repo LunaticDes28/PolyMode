@@ -10,35 +10,39 @@ namespace Polyquest
     {
         public static bool IsConquestSelected = false;
 
-        // 攔截平鋪式選單賦值，生出第 4 個按鈕
-        [HarmonyPrefix]
-        [HarmonyPatch(typeof(GameSetupScreen_UI2), nameof(GameSetupScreen_UI2.gameModeData), MethodType.Setter)]
-        public static void gameModeData_Setter_Prefix(GameSetupScreen_UI2 __instance, ref UIHorizontalListData value)
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(UIHorizontalListData), nameof(UIHorizontalListData.AddItem))]
+        public static void AddItem_Postfix(UIHorizontalListData __instance, string label, int id)
         {
-            if (__instance == null || value == null || value.Pointer == IntPtr.Zero) return;
+            if (__instance == null || __instance.Pointer == IntPtr.Zero) return;
 
             try
             {
-                var labels = value.labels;
-                if (labels == null || labels.Pointer == IntPtr.Zero) return;
-
-                for (int i = 0; i < labels.Count; i++)
+                // 當選單正在載入最後一個預設模式 "Infinity" 時進行攔截
+                if (label != null && label.Equals("Infinity", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (labels[i] != null && labels[i].Equals("Conquest", StringComparison.OrdinalIgnoreCase))
-                    {
-                        return; 
-                    }
-                }
+                    var labels = __instance.labels;
+                    if (labels == null || labels.Pointer == IntPtr.Zero) return;
 
-                // 直接綁定你經由 EnumCache 註冊成功的動態合法核心列舉 ID (例如 8)
-                int registeredConquestId = PolyMod.Registry.gameModesAutoidx - 1;
-                value.AddItem("Conquest", registeredConquestId);
-                
-                Loader.modLogger?.LogInfo($"[Conquest-UI] ✅ SUCCESS: Appended 'Conquest' linked to registered ID {registeredConquestId}. Total: {value.labels.Count}");
+                    // 嚴格比對，防範重複注入
+                    for (int i = 0; i < labels.Count; i++)
+                    {
+                        if (labels[i] != null && labels[i].Equals("Conquest", StringComparison.OrdinalIgnoreCase))
+                        {
+                            return; 
+                        }
+                    }
+
+                    int registeredConquestId = PolyMod.Registry.gameModesAutoidx - 1;
+
+                    __instance.AddItem("Conquest", registeredConquestId);
+                    
+                    Loader.modLogger?.LogInfo($"[Conquest-UI] ✅ SUCCESS: Naturally appended 'Conquest' button via AddItem Postfix! Linked to dynamic ID {registeredConquestId}.");
+                }
             }
             catch (Exception ex)
             {
-                Loader.modLogger?.LogError($"[Conquest-UI] UI injection detour crashed: {ex.Message}");
+                Loader.modLogger?.LogError($"[Conquest-UI] AddItem post detour encountered an issue: {ex.Message}");
             }
         }
 
