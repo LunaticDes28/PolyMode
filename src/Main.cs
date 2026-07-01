@@ -64,11 +64,11 @@ namespace Polyquest
 
                 int remainder = neutralVillages.Count % playerCount;
 
-                // If creating extra villages is favourable for fairness, do this
+                // Emergency spawn
                 if (remainder > 0 && remainder >= (playerCount * 0.6f))
                 {
                     int citiesToSpawn = playerCount - remainder;
-                    Loader.modLogger!.LogInfo($"[Conquest-Map] Spawning {citiesToSpawn} emergency villages...");
+                    Loader.modLogger!.LogInfo($"[Conquest-Map] Totally {neutralVillages.Count} villages & {playerCount} players. Spawning {citiesToSpawn} emergency villages...");
 
                     for (int s = 0; s < citiesToSpawn; s++)
                     {
@@ -79,6 +79,7 @@ namespace Polyquest
                             TileData targetTile = gameState.Map.Tiles[tileIndex];
                             gen.SetTileAsCity(targetTile);
                             neutralVillages.Add(targetTile);
+                            Loader.modLogger!.LogInfo($"[Conquest-Map] Emergency village placed at {emergencyCoords}.");
                         }
                         else
                         {
@@ -87,8 +88,7 @@ namespace Polyquest
                     }
                 }
 
-                // If creating extra villages is NOT favourable for fairness, convert excess villages into ruins
-                // Converted villages are chosen by their proximity to players
+                // Assign villages based on proximity
                 int maxCitiesPerPlayer = neutralVillages.Count / playerCount;
                 HashSet<WorldCoordinates> assignedCoordinates = new HashSet<WorldCoordinates>();
 
@@ -97,30 +97,11 @@ namespace Polyquest
                     for (int p = 0; p < playerCount; p++)
                     {
                         PlayerState player = gameState.PlayerStates[p];
-                        WorldCoordinates capitalCoords = player.startTile;
-
-                        TileData closestVillage = null;
-                        int closestDistance = int.MaxValue;
-
-                        foreach (var village in neutralVillages)
-                        {
-                            if (assignedCoordinates.Contains(village.coordinates)) continue;
-
-                            int distance = MapDataExtensions.ManhattanDistance(capitalCoords, village.coordinates);
-                            if (distance < closestDistance)
-                            {
-                                closestDistance = distance;
-                                closestVillage = village;
-                            }
-                        }
-
-                        if (closestVillage != null)
-                        {
-                            assignedCoordinates.Add(closestVillage.coordinates);
-                        }
+                        AssignClosestVillage(neutralVillages, assignedCoordinates, player);
                     }
                 }
 
+                // Convert excess to ruins
                 int ruinsCount = 0;
                 foreach (var village in neutralVillages)
                 {
@@ -131,7 +112,7 @@ namespace Polyquest
                     }
                 }
 
-                Loader.modLogger!.LogInfo($"[Conquest-Map] Frontier consolidation complete. Converted {ruinsCount} villages to ruins.");
+                Loader.modLogger!.LogInfo($"[Conquest-Map] Village calculation complete. Each player expects {maxCitiesPerPlayer} cities. Converted {ruinsCount} villages to ruins.");
             }
             catch (Exception ex)
             {
@@ -147,14 +128,12 @@ namespace Polyquest
         private static void StartMatchAction_ExecuteDefault_Postfix(StartMatchAction __instance, GameState gameState)
         {
             if (gameState?.Settings == null) return;
-
             try
             {
                 int registeredConquestId = PolyMod.Registry.gameModesAutoidx - 1;
                 if ((int)gameState.Settings.RulesGameMode != registeredConquestId) return;
 
                 Loader.modLogger?.LogInfo("[Conquest-Match] Executing live proximity grid calculations...");
-
                 ConquestVillageDistribution(gameState);
             }
             catch (Exception ex)
@@ -188,32 +167,47 @@ namespace Polyquest
                 for (int p = 0; p < playerCount; p++)
                 {
                     PlayerState player = gameState.PlayerStates[p];
-                    WorldCoordinates capitalCoords = player.startTile;
-
-                    TileData closestVillage = null;
-                    int closestDistance = int.MaxValue;
-
-                    foreach (var village in neutralVillages)
-                    {
-                        if (assignedCoordinates.Contains(village.coordinates)) continue;
-
-                        int distance = MapDataExtensions.ManhattanDistance(capitalCoords, village.coordinates);
-                        if (distance < closestDistance)
-                        {
-                            closestDistance = distance;
-                            closestVillage = village;
-                        }
-                    }
+                    TileData closestVillage = AssignClosestVillage(neutralVillages, assignedCoordinates, player);
 
                     if (closestVillage != null)
                     {
-                        assignedCoordinates.Add(closestVillage.coordinates);
                         ConquestInitializeCity(gameState, closestVillage, player);
                     }
                 }
             }
 
-            Loader.modLogger?.LogInfo($"[Conquest-Match] All cities physicalized successfully!");
+            Loader.modLogger?.LogInfo($"[Conquest-Match] All cities initialized successfully!");
+        }
+
+        // =========================================================================
+        // Helper: Find and assign closest village to a player
+        // =========================================================================
+        private static TileData AssignClosestVillage(List<TileData> neutralVillages, 
+                                                HashSet<WorldCoordinates> assignedCoordinates, 
+                                                PlayerState player)
+        {
+            WorldCoordinates capitalCoords = player.startTile;
+            TileData closestVillage = null;
+            int closestDistance = int.MaxValue;
+
+            foreach (var village in neutralVillages)
+            {
+                if (assignedCoordinates.Contains(village.coordinates)) continue;
+
+                int distance = MapDataExtensions.ManhattanDistance(capitalCoords, village.coordinates);
+                if (distance < closestDistance)
+                {
+                    closestDistance = distance;
+                    closestVillage = village;
+                }
+            }
+
+            if (closestVillage != null)
+            {
+                assignedCoordinates.Add(closestVillage.coordinates);
+            }
+
+            return closestVillage;
         }
 
         // =========================================================================
@@ -238,6 +232,14 @@ namespace Polyquest
 
                 player.cities++;
 
+                UnitData unitData;
+                if (state.GameLogicData.TryGetData(UnitData.Type.Warrior, out unitData))
+                {
+                    UnitState unitState = ActionUtils.TrainUnitScored(state, player, tile, unitData);
+                    unitState.attacked = false;
+                    unitState.moved = false;
+                }
+
                 Il2CppSystem.Collections.Generic.List<TileData> cityArea = ActionUtils.GetCityAreaSorted(state, tile);
                 if (cityArea != null)
                 {
@@ -255,11 +257,11 @@ namespace Polyquest
                 ActionUtils.RuleArea(state, player, tile, false);
                 ActionUtils.ExploreFromTile(state, player, tile, 2, false);
 
-                Loader.modLogger?.LogInfo($"[Conquest-Match] City physicalized for Player {player.Id} at {tile.coordinates}.");
+                Loader.modLogger?.LogInfo($"[Conquest-Match] City initialized for Player {player.Id} at {tile.coordinates}.");
             }
             catch (Exception ex)
             {
-                Loader.modLogger?.LogError($"[Conquest-Match] City physicalization failed: {ex.Message}");
+                Loader.modLogger?.LogError($"[Conquest-Match] City initialization failed: {ex.Message}");
             }
         }
 
@@ -315,26 +317,78 @@ namespace Polyquest
         {
             if (cityTile?.improvement?.type != ImprovementData.Type.City) return;
 
-            if (cityTile.owner != 0)
+            // 1. Fetch original owner & population
+            int transferredPopulation = 0;
+            byte originalOwnerId = cityTile.owner;
+            PlayerState originalOwner;
+            gameState.TryGetPlayer(originalOwnerId, out originalOwner);
+
+            if (originalOwner != null)
             {
-                PlayerState originalOwner;
-                if (gameState.TryGetPlayer(cityTile.owner, out originalOwner) && originalOwner != null)
+                transferredPopulation = cityTile.improvement.population; 
+
+                if (originalOwner.cities > 0)
                 {
-                    if (originalOwner.cities > 0)
-                    {
-                        originalOwner.cities--;
-                        Loader.modLogger?.LogInfo($"[Conquest] Player {originalOwner.Id} lost a city. Total remaining: {originalOwner.cities}");
-                    }
+                    originalOwner.cities--;
+                    Loader.modLogger?.LogInfo($"[Conquest] Player {originalOwner.Id} lost a city. Total remaining: {originalOwner.cities}");
                 }
             }
 
-            int reward = cityTile.improvement.level * 2 + (int)gameState.CurrentTurn;
+            // 2. Transfer population to nearest unsieged city
+            if (transferredPopulation > 0 && originalOwner != null)
+            {
+                TileData fleeCityTile = null;
+                int closestDistance = int.MaxValue;
+
+                for (int i = 0; i < gameState.Map.Tiles.Length; i++)
+                {
+                    TileData tile = gameState.Map.Tiles[i];
+                    
+                    if (tile.HasImprovement(ImprovementData.Type.City) && tile.owner == originalOwnerId && tile.coordinates != cityTile.coordinates)
+                    {
+                        bool isSieged = false;
+                        
+                        if (tile.unit != null && tile.unit.owner != originalOwnerId)
+                        {
+                            isSieged = true;
+                        }
+
+                        if (!isSieged)
+                        {
+                            int distance = MapDataExtensions.ManhattanDistance(cityTile.coordinates, tile.coordinates);
+                            if (distance < closestDistance)
+                            {
+                                closestDistance = distance;
+                                fleeCityTile = tile;
+                            }
+                        }
+                    }
+                }
+
+                if (fleeCityTile != null)
+                {
+                    fleeCityTile.improvement.AddPopulation((short)transferredPopulation);
+                    Loader.modLogger?.LogInfo($"[Conquest] Transferred {transferredPopulation} population from razed city to safe city at {fleeCityTile.coordinates}.");
+
+                }
+                else
+                {
+                    Loader.modLogger?.LogInfo($"[Conquest] No safe, un-sieged cities found for Player {originalOwnerId}. Population permanently lost.");
+                }
+            }
+
+            // 3. Rewards & Scores increment for attacker
+            int reward = Math.Min(15, cityTile.improvement.level * 2) + Math.Min(15, (int)gameState.CurrentTurn);
+            int score  = 100 + cityTile.improvement.level * 50;
+            gameState.ActionStack.Add(new IncreaseScoreAction(attacker.Id, score, cityTile.coordinates, 50));
+
             if (attacker != null)
             {
                 attacker.Currency += reward;
-                Loader.modLogger?.LogInfo($"[Conquest] City destroyed by player {attacker.Id} (+{reward} stars)");
+                Loader.modLogger?.LogInfo($"[Conquest] City destroyed by player {attacker.Id} (+{reward} stars & {score} scores)");
             }
 
+            // 4. Unrule city area & Score deduction for defender
             Il2CppSystem.Collections.Generic.List<TileData> cityArea = ActionUtils.GetCityAreaSorted(gameState, cityTile);
             if (cityArea != null)
             {
@@ -343,13 +397,21 @@ namespace Polyquest
                     TileData territoryTile = cityArea[j];
                     if (territoryTile != null)
                     {
+                        int num = ScoreSheet.tileValue;
+                        if (territoryTile.improvement != null && territoryTile.coordinates != cityTile.coordinates)
+                        {
+                            num += gameState.CalculateImprovementScore(territoryTile);
+                        }
+                        gameState.ActionStack.Add(new DecreaseScoreAction(territoryTile.owner, num));
+
                         territoryTile.owner = 0;
-                        territoryTile.improvement = new ImprovementState { type = ImprovementData.Type.None};
                         territoryTile.rulingCityCoordinates = WorldCoordinates.NULL_COORDINATES; 
+                        territoryTile.improvement = new ImprovementState { type = ImprovementData.Type.None };
                     }
                 }
             }
 
+            // 5. Generate ruins
             bool leaveRuin = UnityEngine.Random.value <= 1f;
             if (leaveRuin)
             {
@@ -357,7 +419,7 @@ namespace Polyquest
             }
             else
             {
-                cityTile.improvement = new ImprovementState { type = ImprovementData.Type.None};
+                cityTile.improvement = new ImprovementState { type = ImprovementData.Type.None };
             }
 
             cityTile.owner = 0;
