@@ -1,7 +1,7 @@
 {
-	"id": "gamemodeplus",
-	"version": "0.0.0",
-	"authors": ["Leaf"],
-	"name": "conquest",
-	"description": ""
+	"id": "polymode",
+	"version": "1.0.0",
+	"authors": ["Leaf (Designer", "Sol (Tester)"],
+	"name": "PolyMode",
+	"description": "Expand The Battle of Polytopia with brand new custom game modes. Currently featuring Conquest mode — and more is coming soon."
 }
