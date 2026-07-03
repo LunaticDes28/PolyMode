@@ -4,6 +4,7 @@ using Polytopia.Data;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.EventSystems;
 
 namespace PolyMode
 {
@@ -518,54 +519,124 @@ namespace PolyMode
         // =========================================================================
         // G. Reactions
         // =========================================================================
-        [HarmonyPostfix]
-        [HarmonyPatch(typeof(PopupManager), nameof(PopupManager.GetPopup))]
-        public static void GetPopup_Postfix(string popupId, ref object __result)
+        [HarmonyPrefix]
+        [HarmonyPatch(typeof(CaptureCityReaction), nameof(CaptureCityReaction.Execute))]
+        public static bool CaptureCityReaction_Execute_Prefix(CaptureCityReaction __instance, Action onComplete)
         {
-            Loader.modLogger?.LogInfo($"[Conquest-Popup] Read PopId: {popupId}");
+        try
+        {
+            // 1. 檢查是否為你的自定義 Conquest 模式
+            int registeredConquestId = PolyMod.Registry.gameModesAutoidx - 1;
+            if ((int)GameManager.GameState.Settings.RulesGameMode != registeredConquestId) return true;
 
-            if (popupId == "CityCaptured" || popupId == "CityLost")
+            // 2. 透過反射抓取這場戰鬥的資料 action (this.action)
+            var actionField = __instance.GetType().GetField("action", 
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public);
+            if (actionField == null) return true;
+            dynamic? action = actionField.GetValue(__instance);
+
+            int attackerId = action?.PlayerId;
+
+            // 3. 檢查目前是否為本地進攻方玩家的視角
+            if (GameManager.IsPlayerViewing((byte)attackerId) && !GameManager.Client.IsSpectating)
             {
-                if (__result != null)
+                // 4. 執行原廠地圖格更新與渲染
+                TileData tile = GameManager.GameState.Map.GetTile((WorldCoordinates)action?.Coordinates);
+                Tile instance = tile.GetInstance();
+
+                if (instance != null)
                 {
-                    try
+                    AudioManager.PlaySFXAtTile(SFXTypes.Capture, tile.coordinates, 0, 1f, 1f);
+                    instance.Render();
+                    instance.SpawnShine(2f);
+                    instance.SpawnSparkles(2f);
+                    instance.StopFire();
+                }
+
+                // 更新地圖邊界、路網，以及增加分數
+                ReactionUtils.UpdateSurroundingBordersAndTransportPaths((byte)attackerId, tile);
+                ResourceManager.AddResourceOfTypeToResourceBar((byte)attackerId, ResourceManager.Type.Score, (float)action.Score, action.Coordinates, null, "None");
+
+                // 5. 獲取大彈窗 IconPopup 實例
+                BasicPopup iconPopup = PopupManager.GetIconPopup();
+                if (iconPopup != null)
+                {
+                    // 設定彈窗圖標
+                    iconPopup.sprite = UIManager.IconData.GetSprite("CapitalCapture");
+
+                    // 寫入自定義的 Conquest 文字
+                    bool isCapital = tile.capitalOf != 0; 
+
+                    if (isCapital)
                     {
-                        // 3. 透過反射（Reflection）動態獲取彈出視窗的描述欄位
-                        // Polytopia 的文字欄位名稱通常為 description, desc, 或 text
-                        var descField = __result.GetType().GetField("description", 
-                            System.Reflection.BindingFlags.Public | 
-                            System.Reflection.BindingFlags.NonPublic | 
-                            System.Reflection.BindingFlags.Instance);
+                        // 攻佔「首都」時的震撼宣告
+                        iconPopup.Header = "Capital conquered!";
+                        iconPopup.Description = "The legendary capital has fallen. The empire interconnection is forever lost.";
+                    }
+                    else
+                    {
+                        // 攻佔「普通城市」時的宣告
+                        iconPopup.Header = "City conquered.";
+                        iconPopup.Description = "The city is eradicated from existence. Infrastructure remains as ruins.";
+                    }
 
-                        if (descField != null)
+                    // 6. 設定按鈕點擊事件的回呼
+                    // a. 建立標準的原生 C# 委派（不帶參數，因為 Il2CppSystem.Action 是無參數的）
+                    System.Action csharpBtnAction = new System.Action(() =>
+                    {
+                        try
                         {
-                            // 讀取原來的通知內容（例如："Your city was captured by Imperius!"）
-                            string? originalDesc = descField.GetValue(__result) as string;
-
-                            // 4. 改寫成你想要的自定義描述
-                            string newDesc = "🚨 糟糕！這座城市已經被秘密轉換並落入敵手！";
-                            
-                            // 寫入新文字
-                            descField.SetValue(__result, newDesc);
-                            
-                            Debug.Log($"[Mod] 成功攔截 {popupId} 並將描述修改為: {newDesc}");
-                        }
-                        else
-                        {
-                            // 如果找不到 field，嘗試尋找 Property (Get/Set)
-                            var descProperty = __result.GetType().GetProperty("Description");
-                            if (descProperty != null && descProperty.CanWrite)
+                            if (!GameManager.Client.IsReplay)
                             {
-                                descProperty.SetValue(__result, "🚨 城市已遭敵方轉換！");
+                                InputEvents.SelectionCleared();
                             }
+                            ResourceManager.IncomeChanged((byte)attackerId);
+                            
+                            // 呼叫原本傳入的 Action，讓遊戲繼續
+                            onComplete(); 
                         }
-                    }
-                    catch (Exception e)
-                    {
-                        Debug.LogError($"[Mod] 修改 Popup 描述時出錯: {e.Message}");
-                    }
+                        catch (Exception btnEx)
+                        {
+                            Debug.LogError($"[Conquest-Popup] Error on button clicked: {btnEx}");
+                            onComplete(); // 發生異常也強行放行，防止畫面卡死
+                        }
+                    });
+
+                    // b. 核心修正：將 C# Action 轉換為 C++ 能看懂的 IntPtr 指標
+                    // 這裡使用 Marshal 或是你環境內建的函數指標轉換
+                    IntPtr functionPointer = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(csharpBtnAction);
+
+                    // c. 封裝成 Il2CppSystem.Action（傳入剛才轉好的 IntPtr）
+                    Il2CppSystem.Action il2cppBtnAction = new Il2CppSystem.Action(functionPointer);
+
+                    // d. 傳入按鈕構造函數（現在類型完全與 Il2CppSystem.Action 一致了）
+                    PopupBase.PopupButtonData[] array = new PopupBase.PopupButtonData[1];
+                    array[0] = new PopupBase.PopupButtonData(
+                        "buttons.ok",
+                        PopupBase.PopupButtonData.States.Selected,
+                        il2cppBtnAction, 
+                        -1, 
+                        true, 
+                        null
+                    );
+                    iconPopup.buttonData = array;
+
+                    // 7. 正式推送顯示視窗
+                    iconPopup.Show();
+
+                    Debug.Log("[Conquest-Popup] Popup intercepted！");
+                    return false; // 成功執行客製化邏輯，切斷原廠邏輯
                 }
             }
+        }
+        catch (Exception ex)
+        {
+            // 🚨 安全防護：萬一以上任何一行代碼報錯，列印日誌，並放行原廠邏輯，保證遊戲不崩潰
+            Debug.LogError($"[Conquest-Popup] Error in CaptureCityReaction: {ex}");
+            return true;
+        }
+
+        return true; 
         }
     }
 }
