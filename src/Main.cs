@@ -523,67 +523,110 @@ namespace PolyMode
         [HarmonyPatch(typeof(CaptureCityReaction), nameof(CaptureCityReaction.Execute))]
         public static bool CaptureCityReaction_Execute_Prefix(CaptureCityReaction __instance, Action onComplete)
         {
-        try
-        {
-            // 1. 檢查是否為你的自定義 Conquest 模式
-            int registeredConquestId = PolyMod.Registry.gameModesAutoidx - 1;
-            if ((int)GameManager.GameState.Settings.RulesGameMode != registeredConquestId) return true;
-
-            // 2. 透過反射抓取這場戰鬥的資料 action (this.action)
-            var actionField = __instance.GetType().GetField("action", 
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public);
-            if (actionField == null) return true;
-            dynamic? action = actionField.GetValue(__instance);
-
-            int attackerId = action?.PlayerId;
-
-            // 3. 檢查目前是否為本地進攻方玩家的視角
-            if (GameManager.IsPlayerViewing((byte)attackerId) && !GameManager.Client.IsSpectating)
+            try
             {
-                // 4. 執行原廠地圖格更新與渲染
-                TileData tile = GameManager.GameState.Map.GetTile((WorldCoordinates)action?.Coordinates);
-                Tile instance = tile.GetInstance();
+                Loader.modLogger?.LogInfo("[Conquest-Popup] CaptureCityReaction running...");
 
-                if (instance != null)
+                // 1. Conquest mode check
+                int registeredConquestId = PolyMod.Registry.gameModesAutoidx - 1;
+                if ((int)GameManager.GameState.Settings.RulesGameMode != registeredConquestId) return true;
+
+                // 2. Validations
+                TileData tile = GameManager.GameState.Map.GetTile(__instance.action.Coordinates);
+                PlayerState playerState;
+                GameManager.GameState.TryGetPlayer(__instance.action.PlayerId, out playerState);
+                __instance.ValidateUnitForCaptureCity(tile);
+
+                Tile instance = tile.GetInstance();
+                Loader.modLogger?.LogInfo($"[Conquest-Popup] CaptureCityReaction Tile instance: {instance}");
+
+                int attackerId = __instance.action.PlayerId;
+                Loader.modLogger?.LogInfo($"[Conquest-Popup] CaptureCityReaction attackerId: {attackerId}");
+
+                // 3. Camera Action
+                CameraController.Instance.CenterOnPosition(tile.coordinates.ToPosition(), 0.8f, 
+                    new System.Action(() => ExecuteCaptureReactionLogic(__instance, onComplete, tile, instance, attackerId)), 
+                    false);
+
+                instance?.StopFire();
+
+                if (tile.unit != null)
                 {
-                    AudioManager.PlaySFXAtTile(SFXTypes.Capture, tile.coordinates, 0, 1f, 1f);
-                    instance.Render();
-                    instance.SpawnShine(2f);
-                    instance.SpawnSparkles(2f);
-                    instance.StopFire();
+                    Tile tileInstance = MapRenderer.Current.GetTileInstance(__instance.action.PreviousHomeTown);
+                    if (tileInstance != null && !tileInstance.IsHidden)
+                    {
+                        tileInstance.Render();
+                    }
                 }
 
-                // 更新地圖邊界、路網，以及增加分數
-                ReactionUtils.UpdateSurroundingBordersAndTransportPaths((byte)attackerId, tile);
-                ResourceManager.AddResourceOfTypeToResourceBar((byte)attackerId, ResourceManager.Type.Score, (float)action.Score, action.Coordinates, null, "None");
-
-                // 5. 獲取大彈窗 IconPopup 實例
-                BasicPopup iconPopup = PopupManager.GetIconPopup();
-                if (iconPopup != null)
+                if (!GameManager.Client.IsReplay)
                 {
-                    // 設定彈窗圖標
-                    iconPopup.sprite = UIManager.IconData.GetSprite("CapitalCapture");
+                    InputEvents.SelectionCleared();
+                }
+                ResourceManager.IncomeChanged(__instance.action.PlayerId);
 
-                    // 寫入自定義的 Conquest 文字
-                    bool isCapital = tile.capitalOf != 0; 
+                if ((int)GameManager.GameState.Settings.RulesGameMode == registeredConquestId) return false;
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest-Popup] Error in CaptureCityReaction: {ex}");
+                return true;
+            }
 
-                    if (isCapital)
+            return true;
+        }
+
+        private static void ExecuteCaptureReactionLogic(
+            CaptureCityReaction __instance, 
+            Action onComplete, 
+            TileData tile, 
+            Tile instance, 
+            int attackerId)
+        {
+            try
+            {
+                if (GameManager.IsPlayerViewing((byte)attackerId) && !GameManager.Client.IsSpectating)
+                {
+                    Loader.modLogger?.LogInfo($"[Conquest-Popup] Attacker IsViewing...");
+
+                    // Tile render
+                    if (instance != null)
                     {
-                        // 攻佔「首都」時的震撼宣告
-                        iconPopup.Header = "Capital conquered!";
-                        iconPopup.Description = "The legendary capital has fallen. The empire interconnection is forever lost.";
+                        AudioManager.PlaySFXAtTile(SFXTypes.Capture, tile.coordinates, 0, 1f, 1f);
+                        instance.Render();
+                        instance.SpawnShine(2f);
+                        instance.SpawnSparkles(2f);
+                        instance.StopFire();
                     }
-                    else
-                    {
-                        // 攻佔「普通城市」時的宣告
-                        iconPopup.Header = "City conquered.";
-                        iconPopup.Description = "The city is eradicated from existence. Infrastructure remains as ruins.";
-                    }
 
-                    // 6. 設定按鈕點擊事件的回呼
-                    // a. 建立標準的原生 C# 委派（不帶參數，因為 Il2CppSystem.Action 是無參數的）
-                    System.Action csharpBtnAction = new System.Action(() =>
+                    ReactionUtils.UpdateSurroundingBordersAndTransportPaths((byte)attackerId, tile);
+                    ResourceManager.AddResourceOfTypeToResourceBar((byte)attackerId, ResourceManager.Type.Score, __instance.action.Score, __instance.action.Coordinates, null, "None");
+                    Loader.modLogger?.LogInfo($"[Conquest-Popup] Tile visuals updated.");
+
+                    // Icon Popup initialization
+                    BasicPopup iconPopup = PopupManager.GetIconPopup();
+                    if (iconPopup != null)
                     {
+                        // Contents
+                        iconPopup.sprite = UIManager.IconData.GetSprite("CapitalCapture");
+
+                        bool isCapital = tile.capitalOf != 0;
+                        if (isCapital)
+                        {
+                            iconPopup.Header = "Capital conquered!";
+                            iconPopup.Description = "The legendary capital has fallen to you. Empire interconnection is forever lost.";
+                        }
+                        else
+                        {
+                            iconPopup.Header = "City conquered.";
+                            iconPopup.Description = "You have eradicated the city from existence. Infrastructure remains as ruins.";
+                        }
+
+                        Loader.modLogger?.LogInfo($"[Conquest-Popup] Popup info: {iconPopup.Header}");
+
+                        // No button
+                        iconPopup.buttonData = new PopupBase.PopupButtonData[0];
+
                         try
                         {
                             if (!GameManager.Client.IsReplay)
@@ -591,52 +634,110 @@ namespace PolyMode
                                 InputEvents.SelectionCleared();
                             }
                             ResourceManager.IncomeChanged((byte)attackerId);
-                            
-                            // 呼叫原本傳入的 Action，讓遊戲繼續
-                            onComplete(); 
+                            onComplete();
                         }
-                        catch (Exception btnEx)
+                        catch (Exception ex)
                         {
-                            Debug.LogError($"[Conquest-Popup] Error on button clicked: {btnEx}");
-                            onComplete(); // 發生異常也強行放行，防止畫面卡死
+                            Loader.modLogger?.LogError($"[Conquest-Popup] Error running complete pipeline: {ex}");
+                            onComplete();
                         }
-                    });
 
-                    // b. 核心修正：將 C# Action 轉換為 C++ 能看懂的 IntPtr 指標
-                    // 這裡使用 Marshal 或是你環境內建的函數指標轉換
-                    IntPtr functionPointer = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(csharpBtnAction);
+                        iconPopup.Show();
+                        Loader.modLogger?.LogInfo("[Conquest-Popup] Popup intercepted！");
+                    }
+                }
+                else
+                {
+                    Loader.modLogger?.LogInfo($"[Conquest-Popup] Else IsViewing...");
 
-                    // c. 封裝成 Il2CppSystem.Action（傳入剛才轉好的 IntPtr）
-                    Il2CppSystem.Action il2cppBtnAction = new Il2CppSystem.Action(functionPointer);
+                    // Tile render
+                    if (instance != null)
+                    {
+                        AudioManager.PlaySFXAtTile(SFXTypes.Capture, tile.coordinates, 0, 1f, 1f);
+                        instance.Render();
+                        instance.SpawnShine(2f);
+                        instance.SpawnSparkles(2f);
+                        instance.StopFire();
+                    }
 
-                    // d. 傳入按鈕構造函數（現在類型完全與 Il2CppSystem.Action 一致了）
-                    PopupBase.PopupButtonData[] array = new PopupBase.PopupButtonData[1];
-                    array[0] = new PopupBase.PopupButtonData(
-                        "buttons.ok",
-                        PopupBase.PopupButtonData.States.Selected,
-                        il2cppBtnAction, 
-                        -1, 
-                        true, 
-                        null
-                    );
-                    iconPopup.buttonData = array;
+                    ReactionUtils.UpdateSurroundingBordersAndTransportPaths((byte)attackerId, tile);
+                    ResourceManager.AddResourceOfTypeToResourceBar((byte)attackerId, ResourceManager.Type.Score, __instance.action.Score, __instance.action.Coordinates, null, "None");
+                    Loader.modLogger?.LogInfo($"[Conquest-Popup] Tile visuals updated.");
 
-                    // 7. 正式推送顯示視窗
-                    iconPopup.Show();
+                    if (GameManager.IsPlayerViewing(__instance.action.OldOwnerId) && !GameManager.Client.IsSpectating)
+                    {
+                        Loader.modLogger?.LogInfo($"[Conquest-Popup] Defender IsViewing...");
 
-                    Debug.Log("[Conquest-Popup] Popup intercepted！");
-                    return false; // 成功執行客製化邏輯，切斷原廠邏輯
+                        // Icon Popup initialization
+                        BasicPopup iconPopup = PopupManager.GetIconPopup();
+                        if (iconPopup != null)
+                        {
+                            iconPopup.sprite = UIManager.IconData.GetSprite("CapitalCapture");
+
+                            bool isCapital = tile.capitalOf != 0;
+                            if (isCapital)
+                            {
+                                iconPopup.Header = "Capital conquered!";
+                                iconPopup.Description = "Your empire capital has fallen. All interconnection is forever lost.";
+                            }
+                            else
+                            {
+                                iconPopup.Header = "City conquered.";
+                                iconPopup.Description = "Your city is eradicated from existence. Infrastructure remains as ruins.";
+                            }
+
+                            Loader.modLogger?.LogInfo($"[Conquest-Popup] Popup info: {iconPopup.Header}");
+
+                            // Set button
+                            System.Action csharpBtnAction = CreateButtonAction(attackerId, onComplete);
+
+                            IntPtr functionPointer = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(csharpBtnAction);
+                            Il2CppSystem.Action il2cppBtnAction = new Il2CppSystem.Action(functionPointer);
+
+                            PopupBase.PopupButtonData[] array = new PopupBase.PopupButtonData[1];
+                            array[0] = new PopupBase.PopupButtonData(
+                                "buttons.ok",
+                                PopupBase.PopupButtonData.States.Selected,
+                                il2cppBtnAction,
+                                -1,
+                                true,
+                                null
+                            );
+
+                            iconPopup.buttonData = array;
+
+                            iconPopup.Show();
+                            Loader.modLogger?.LogInfo("[Conquest-Popup] Popup intercepted！");
+                        }
+                    }
                 }
             }
-        }
-        catch (Exception ex)
-        {
-            // 🚨 安全防護：萬一以上任何一行代碼報錯，列印日誌，並放行原廠邏輯，保證遊戲不崩潰
-            Debug.LogError($"[Conquest-Popup] Error in CaptureCityReaction: {ex}");
-            return true;
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest-Popup] Error in ExecuteCapturePopupLogic: {ex}");
+            }
         }
 
-        return true; 
+        private static System.Action CreateButtonAction(int attackerId, Action onComplete)
+        {
+            return () =>
+            {
+                try
+                {
+                    if (!GameManager.Client.IsReplay)
+                    {
+                        InputEvents.SelectionCleared();
+                    }
+                    ResourceManager.IncomeChanged((byte)attackerId);
+                    Loader.modLogger?.LogInfo($"[Conquest-Popup] Button clicked - Returning to Action...");
+                    onComplete();
+                }
+                catch (Exception btnEx)
+                {
+                    Loader.modLogger?.LogError($"[Conquest-Popup] Error on button clicked: {btnEx}");
+                    onComplete();
+                }
+            };
         }
     }
 }
