@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using Il2CppInterop.Runtime.InteropTypes.Arrays;
 
 namespace PolyMode
 {
@@ -525,219 +526,180 @@ namespace PolyMode
         {
             try
             {
-                Loader.modLogger?.LogInfo("[Conquest-Popup] CaptureCityReaction running...");
-
-                // 1. Conquest mode check
                 int registeredConquestId = PolyMod.Registry.gameModesAutoidx - 1;
-                if ((int)GameManager.GameState.Settings.RulesGameMode != registeredConquestId) return true;
+                if ((int)GameManager.GameState.Settings.RulesGameMode != registeredConquestId) 
+                    return true;
 
-                // 2. Validations
                 TileData tile = GameManager.GameState.Map.GetTile(__instance.action.Coordinates);
-                PlayerState playerState;
-                GameManager.GameState.TryGetPlayer(__instance.action.PlayerId, out playerState);
-                __instance.ValidateUnitForCaptureCity(tile);
-
                 Tile instance = tile.GetInstance();
-                Loader.modLogger?.LogInfo($"[Conquest-Popup] CaptureCityReaction Tile instance: {instance}");
-
                 int attackerId = __instance.action.PlayerId;
-                Loader.modLogger?.LogInfo($"[Conquest-Popup] CaptureCityReaction attackerId: {attackerId}");
 
-                // 3. Camera Action
-                CameraController.Instance.CenterOnPosition(tile.coordinates.ToPosition(), 0.8f, 
-                    new System.Action(() => ExecuteCaptureReactionLogic(__instance, onComplete, tile, instance, attackerId)), 
-                    false);
+                System.Action cameraCallback = () => 
+                    ExecutePopupLogic(__instance, onComplete, tile, instance, attackerId);
+
+                _cameraCallbackHolder = cameraCallback;
+
+                IntPtr cameraPtr = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(cameraCallback);
+                Il2CppSystem.Action il2cppCameraAction = new Il2CppSystem.Action(cameraPtr);
+
+                CameraController.Instance.CenterOnPosition(tile.coordinates.ToPosition(), 0.8f, il2cppCameraAction, false);
 
                 instance?.StopFire();
 
-                if (tile.unit != null)
-                {
-                    Tile tileInstance = MapRenderer.Current.GetTileInstance(__instance.action.PreviousHomeTown);
-                    if (tileInstance != null && !tileInstance.IsHidden)
-                    {
-                        tileInstance.Render();
-                    }
-                }
-
                 if (!GameManager.Client.IsReplay)
-                {
                     InputEvents.SelectionCleared();
-                }
+
                 ResourceManager.IncomeChanged(__instance.action.PlayerId);
 
-                if ((int)GameManager.GameState.Settings.RulesGameMode == registeredConquestId) return false;
+                return false;
             }
             catch (Exception ex)
             {
-                Loader.modLogger?.LogError($"[Conquest-Popup] Error in CaptureCityReaction: {ex}");
+                Loader.modLogger?.LogError($"[Conquest-Popup] Prefix error: {ex}");
                 return true;
             }
-
-            return true;
         }
 
-        private static void ExecuteCaptureReactionLogic(
-            CaptureCityReaction __instance, 
-            Action onComplete, 
-            TileData tile, 
-            Tile instance, 
+        // Static holders to prevent GC issues
+        private static System.Action? _cameraCallbackHolder;
+        private static System.Action? _buttonActionHolder;
+        private static System.Action? _autoCloseActionHolder;
+
+        private static void ExecutePopupLogic(
+            CaptureCityReaction __instance,
+            Action onComplete,
+            TileData tile,
+            Tile instance,
             int attackerId)
         {
             try
             {
+                PerformVisualUpdate(instance, tile, attackerId, __instance.action.Score);
+                _cameraCallbackHolder = null; // Clean up
+
+                BasicPopup iconPopup = PopupManager.GetIconPopup();
+                if (iconPopup == null)
+                {
+                    onComplete?.Invoke();
+                    return;
+                }
+
+                iconPopup.sprite = UIManager.IconData.GetSprite("CapitalCapture");
+                bool isCapital = tile.capitalOf != 0;
+
                 if (GameManager.IsPlayerViewing((byte)attackerId) && !GameManager.Client.IsSpectating)
                 {
-                    Loader.modLogger?.LogInfo($"[Conquest-Popup] Attacker IsViewing...");
+                    // ==================== ATTACKER PATH ====================
+                    iconPopup.Header = isCapital ? "Capital conquered!" : "City conquered.";
+                    iconPopup.Description = isCapital 
+                        ? "The legendary capital has fallen to you. All interconnection is forever lost." 
+                        : "You have eradicated the city from existence. Infrastructure remains as ruins.";
 
-                    // Tile render
-                    if (instance != null)
+                    iconPopup.buttonData = new PopupBase.PopupButtonData[0];
+
+                    iconPopup.Show();
+                    Loader.modLogger?.LogInfo("[Conquest-Popup] Attacker popup shown (will auto close)");
+
+                    // Delay onComplete so player can read the popup
+                    System.Action autoClose = () =>
                     {
-                        AudioManager.PlaySFXAtTile(SFXTypes.Capture, tile.coordinates, 0, 1f, 1f);
-                        instance.Render();
-                        instance.SpawnShine(2f);
-                        instance.SpawnSparkles(2f);
-                        instance.StopFire();
-                    }
+                        SafeComplete(onComplete, attackerId);
+                        _autoCloseActionHolder = null; // Clean up
+                    };
 
-                    ReactionUtils.UpdateSurroundingBordersAndTransportPaths((byte)attackerId, tile);
-                    ResourceManager.AddResourceOfTypeToResourceBar((byte)attackerId, ResourceManager.Type.Score, __instance.action.Score, __instance.action.Coordinates, null, "None");
-                    Loader.modLogger?.LogInfo($"[Conquest-Popup] Tile visuals updated.");
+                    _autoCloseActionHolder = autoClose;
 
-                    // Icon Popup initialization
-                    BasicPopup iconPopup = PopupManager.GetIconPopup();
-                    if (iconPopup != null)
+                    IntPtr closePtr = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(autoClose);
+                    Il2CppSystem.Action il2cppClose = new Il2CppSystem.Action(closePtr);
+
+                    GameManager.DelayCall(2500, il2cppClose);   // 2.5 seconds
+                }
+                else if (GameManager.IsPlayerViewing(__instance.action.OldOwnerId) && !GameManager.Client.IsSpectating)
+                {
+                    // ==================== DEFENDER PATH ====================
+                    iconPopup.Header = isCapital ? "Capital conquered!" : "City conquered.";
+                    iconPopup.Description = isCapital 
+                        ? "Your empire capital has fallen. All interconnection is forever lost." 
+                        : "Your city is eradicated from existence. Infrastructure remains as ruins.";
+
+                    _buttonActionHolder = () =>
                     {
-                        // Contents
-                        iconPopup.sprite = UIManager.IconData.GetSprite("CapitalCapture");
-
-                        bool isCapital = tile.capitalOf != 0;
-                        if (isCapital)
-                        {
-                            iconPopup.Header = "Capital conquered!";
-                            iconPopup.Description = "The legendary capital has fallen to you. Empire interconnection is forever lost.";
-                        }
-                        else
-                        {
-                            iconPopup.Header = "City conquered.";
-                            iconPopup.Description = "You have eradicated the city from existence. Infrastructure remains as ruins.";
-                        }
-
-                        Loader.modLogger?.LogInfo($"[Conquest-Popup] Popup info: {iconPopup.Header}");
-
-                        // No button
-                        iconPopup.buttonData = new PopupBase.PopupButtonData[0];
-
                         try
                         {
                             if (!GameManager.Client.IsReplay)
-                            {
                                 InputEvents.SelectionCleared();
-                            }
+
                             ResourceManager.IncomeChanged((byte)attackerId);
-                            onComplete();
+                            Loader.modLogger?.LogInfo("[Conquest-Popup] Button clicked");
+                            onComplete?.Invoke();
                         }
                         catch (Exception ex)
                         {
-                            Loader.modLogger?.LogError($"[Conquest-Popup] Error running complete pipeline: {ex}");
-                            onComplete();
+                            Loader.modLogger?.LogError($"[Conquest-Popup] Button error: {ex}");
+                            onComplete?.Invoke();
                         }
+                        finally
+                        {
+                            _buttonActionHolder = null; // Clean up
+                        }
+                    };
 
-                        iconPopup.Show();
-                        Loader.modLogger?.LogInfo("[Conquest-Popup] Popup intercepted！");
-                    }
+                    IntPtr btnPtr = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(_buttonActionHolder);
+                    Il2CppSystem.Action il2cppBtnAction = new Il2CppSystem.Action(btnPtr);
+
+                    var buttonArray = new Il2CppReferenceArray<PopupBase.PopupButtonData>(1);
+                    buttonArray[0] = new PopupBase.PopupButtonData(
+                        "buttons.ok",
+                        PopupBase.PopupButtonData.States.Selected,
+                        il2cppBtnAction,
+                        -1,
+                        true,
+                        null
+                    );
+
+                    iconPopup.buttonData = buttonArray;
+                    iconPopup.Show();
                 }
                 else
                 {
-                    Loader.modLogger?.LogInfo($"[Conquest-Popup] Else IsViewing...");
-
-                    // Tile render
-                    if (instance != null)
-                    {
-                        AudioManager.PlaySFXAtTile(SFXTypes.Capture, tile.coordinates, 0, 1f, 1f);
-                        instance.Render();
-                        instance.SpawnShine(2f);
-                        instance.SpawnSparkles(2f);
-                        instance.StopFire();
-                    }
-
-                    ReactionUtils.UpdateSurroundingBordersAndTransportPaths((byte)attackerId, tile);
-                    ResourceManager.AddResourceOfTypeToResourceBar((byte)attackerId, ResourceManager.Type.Score, __instance.action.Score, __instance.action.Coordinates, null, "None");
-                    Loader.modLogger?.LogInfo($"[Conquest-Popup] Tile visuals updated.");
-
-                    if (GameManager.IsPlayerViewing(__instance.action.OldOwnerId) && !GameManager.Client.IsSpectating)
-                    {
-                        Loader.modLogger?.LogInfo($"[Conquest-Popup] Defender IsViewing...");
-
-                        // Icon Popup initialization
-                        BasicPopup iconPopup = PopupManager.GetIconPopup();
-                        if (iconPopup != null)
-                        {
-                            iconPopup.sprite = UIManager.IconData.GetSprite("CapitalCapture");
-
-                            bool isCapital = tile.capitalOf != 0;
-                            if (isCapital)
-                            {
-                                iconPopup.Header = "Capital conquered!";
-                                iconPopup.Description = "Your empire capital has fallen. All interconnection is forever lost.";
-                            }
-                            else
-                            {
-                                iconPopup.Header = "City conquered.";
-                                iconPopup.Description = "Your city is eradicated from existence. Infrastructure remains as ruins.";
-                            }
-
-                            Loader.modLogger?.LogInfo($"[Conquest-Popup] Popup info: {iconPopup.Header}");
-
-                            // Set button
-                            System.Action csharpBtnAction = CreateButtonAction(attackerId, onComplete);
-
-                            IntPtr functionPointer = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(csharpBtnAction);
-                            Il2CppSystem.Action il2cppBtnAction = new Il2CppSystem.Action(functionPointer);
-
-                            PopupBase.PopupButtonData[] array = new PopupBase.PopupButtonData[1];
-                            array[0] = new PopupBase.PopupButtonData(
-                                "buttons.ok",
-                                PopupBase.PopupButtonData.States.Selected,
-                                il2cppBtnAction,
-                                -1,
-                                true,
-                                null
-                            );
-
-                            iconPopup.buttonData = array;
-
-                            iconPopup.Show();
-                            Loader.modLogger?.LogInfo("[Conquest-Popup] Popup intercepted！");
-                        }
-                    }
+                    onComplete?.Invoke();
                 }
             }
             catch (Exception ex)
             {
-                Loader.modLogger?.LogError($"[Conquest-Popup] Error in ExecuteCapturePopupLogic: {ex}");
+                Loader.modLogger?.LogError($"[Conquest-Popup] ExecutePopupLogic error: {ex}");
+                onComplete?.Invoke();
             }
         }
 
-        private static System.Action CreateButtonAction(int attackerId, Action onComplete)
+        private static void PerformVisualUpdate(Tile instance, TileData tile, int attackerId, int score)
         {
-            return () =>
+            if (instance != null)
             {
-                try
-                {
-                    if (!GameManager.Client.IsReplay)
-                    {
-                        InputEvents.SelectionCleared();
-                    }
-                    ResourceManager.IncomeChanged((byte)attackerId);
-                    Loader.modLogger?.LogInfo($"[Conquest-Popup] Button clicked - Returning to Action...");
-                    onComplete();
-                }
-                catch (Exception btnEx)
-                {
-                    Loader.modLogger?.LogError($"[Conquest-Popup] Error on button clicked: {btnEx}");
-                    onComplete();
-                }
-            };
+                AudioManager.PlaySFXAtTile(SFXTypes.Capture, tile.coordinates, 0, 1f, 1f);
+                instance.Render();
+                instance.SpawnShine(2f);
+                instance.SpawnSparkles(2f);
+                instance.StopFire();
+            }
+
+            ReactionUtils.UpdateSurroundingBordersAndTransportPaths((byte)attackerId, tile);
+            ResourceManager.AddResourceOfTypeToResourceBar((byte)attackerId, ResourceManager.Type.Score, score, tile.coordinates, null, "None");
+        }
+
+        private static void SafeComplete(Action onComplete, int attackerId)
+        {
+            try
+            {
+                if (!GameManager.Client.IsReplay)
+                    InputEvents.SelectionCleared();
+                ResourceManager.IncomeChanged((byte)attackerId);
+                onComplete?.Invoke();
+            }
+            catch
+            {
+                onComplete?.Invoke();
+            }
         }
     }
 }
