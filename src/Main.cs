@@ -526,15 +526,18 @@ namespace PolyMode
         {
             try
             {
+                Loader.modLogger?.LogInfo("[Conquest-Popup] CaptureCityReaction_Execute_Prefix started.");
+
                 int registeredConquestId = PolyMod.Registry.gameModesAutoidx - 1;
-                if ((int)GameManager.GameState.Settings.RulesGameMode != registeredConquestId) 
-                    return true;
+                if ((int)GameManager.GameState.Settings.RulesGameMode != registeredConquestId) return true;
 
                 TileData tile = GameManager.GameState.Map.GetTile(__instance.action.Coordinates);
                 Tile instance = tile.GetInstance();
                 int attackerId = __instance.action.PlayerId;
 
-                System.Action cameraCallback = () => 
+                Loader.modLogger?.LogInfo($"[Conquest-Popup] AttackerId: {attackerId}, Tile: {tile?.coordinates}");
+
+                System.Action cameraCallback = () =>
                     ExecutePopupLogic(__instance, onComplete, tile, instance, attackerId);
 
                 _cameraCallbackHolder = cameraCallback;
@@ -542,15 +545,15 @@ namespace PolyMode
                 IntPtr cameraPtr = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(cameraCallback);
                 Il2CppSystem.Action il2cppCameraAction = new Il2CppSystem.Action(cameraPtr);
 
+                Loader.modLogger?.LogInfo("[Conquest-Popup] Centering camera and scheduling popup.");
                 CameraController.Instance.CenterOnPosition(tile.coordinates.ToPosition(), 0.8f, il2cppCameraAction, false);
 
                 instance?.StopFire();
-
                 if (!GameManager.Client.IsReplay)
                     InputEvents.SelectionCleared();
-
                 ResourceManager.IncomeChanged(__instance.action.PlayerId);
 
+                Loader.modLogger?.LogInfo("[Conquest-Popup] Prefix completed successfully.");
                 return false;
             }
             catch (Exception ex)
@@ -574,12 +577,15 @@ namespace PolyMode
         {
             try
             {
+                Loader.modLogger?.LogInfo($"[Conquest-Popup] ExecutePopupLogic started. AttackerId={attackerId}");
+
                 PerformVisualUpdate(instance, tile, attackerId, __instance.action.Score);
                 _cameraCallbackHolder = null; // Clean up
 
                 BasicPopup iconPopup = PopupManager.GetIconPopup();
                 if (iconPopup == null)
                 {
+                    Loader.modLogger?.LogWarning("[Conquest-Popup] Failed to get IconPopup!");
                     onComplete?.Invoke();
                     return;
                 }
@@ -587,24 +593,28 @@ namespace PolyMode
                 iconPopup.sprite = UIManager.IconData.GetSprite("CapitalCapture");
                 bool isCapital = tile.capitalOf != 0;
 
+                Loader.modLogger?.LogInfo($"[Conquest-Popup] IsCapital: {isCapital} | IsAttackerView: {GameManager.IsPlayerViewing((byte)attackerId)}");
+
                 if (GameManager.IsPlayerViewing((byte)attackerId) && !GameManager.Client.IsSpectating)
                 {
                     // ==================== ATTACKER PATH ====================
+                    Loader.modLogger?.LogInfo("[Conquest-Popup] Entering ATTACKER popup path.");
+
                     iconPopup.Header = isCapital ? "Capital conquered!" : "City conquered.";
-                    iconPopup.Description = isCapital 
-                        ? "The legendary capital has fallen to you. All interconnection is forever lost." 
+                    iconPopup.Description = isCapital
+                        ? "The legendary capital has fallen to you. Empire interconnection is forever lost."
                         : "You have eradicated the city from existence. Infrastructure remains as ruins.";
 
                     iconPopup.buttonData = new PopupBase.PopupButtonData[0];
 
                     iconPopup.Show();
-                    Loader.modLogger?.LogInfo("[Conquest-Popup] Attacker popup shown (will auto close)");
+                    Loader.modLogger?.LogInfo("[Conquest-Popup] Attacker popup shown (will auto close after 2.5s)");
 
-                    // Delay onComplete so player can read the popup
                     System.Action autoClose = () =>
                     {
+                        Loader.modLogger?.LogInfo("[Conquest-Popup] Auto-close timer triggered.");
                         SafeComplete(onComplete, attackerId);
-                        _autoCloseActionHolder = null; // Clean up
+                        _autoCloseActionHolder = null;
                     };
 
                     _autoCloseActionHolder = autoClose;
@@ -612,25 +622,26 @@ namespace PolyMode
                     IntPtr closePtr = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(autoClose);
                     Il2CppSystem.Action il2cppClose = new Il2CppSystem.Action(closePtr);
 
-                    GameManager.DelayCall(2500, il2cppClose);   // 2.5 seconds
+                    GameManager.DelayCall(2500, il2cppClose);
                 }
                 else if (GameManager.IsPlayerViewing(__instance.action.OldOwnerId) && !GameManager.Client.IsSpectating)
                 {
                     // ==================== DEFENDER PATH ====================
+                    Loader.modLogger?.LogInfo("[Conquest-Popup] Entering DEFENDER popup path.");
+
                     iconPopup.Header = isCapital ? "Capital conquered!" : "City conquered.";
-                    iconPopup.Description = isCapital 
-                        ? "Your empire capital has fallen. All interconnection is forever lost." 
+                    iconPopup.Description = isCapital
+                        ? "Your empire capital has fallen. All interconnection is forever lost."
                         : "Your city is eradicated from existence. Infrastructure remains as ruins.";
 
                     _buttonActionHolder = () =>
                     {
                         try
                         {
+                            Loader.modLogger?.LogInfo("[Conquest-Popup] Defender button clicked.");
                             if (!GameManager.Client.IsReplay)
                                 InputEvents.SelectionCleared();
-
                             ResourceManager.IncomeChanged((byte)attackerId);
-                            Loader.modLogger?.LogInfo("[Conquest-Popup] Button clicked");
                             onComplete?.Invoke();
                         }
                         catch (Exception ex)
@@ -640,7 +651,8 @@ namespace PolyMode
                         }
                         finally
                         {
-                            _buttonActionHolder = null; // Clean up
+                            _buttonActionHolder = null;
+                            Loader.modLogger?.LogInfo("[Conquest-Popup] Button delegate cleaned up.");
                         }
                     };
 
@@ -659,9 +671,11 @@ namespace PolyMode
 
                     iconPopup.buttonData = buttonArray;
                     iconPopup.Show();
+                    Loader.modLogger?.LogInfo("[Conquest-Popup] Defender popup shown with OK button.");
                 }
                 else
                 {
+                    Loader.modLogger?.LogInfo("[Conquest-Popup] Neither attacker nor defender view, skipping popup.");
                     onComplete?.Invoke();
                 }
             }
@@ -674,6 +688,7 @@ namespace PolyMode
 
         private static void PerformVisualUpdate(Tile instance, TileData tile, int attackerId, int score)
         {
+            Loader.modLogger?.LogInfo($"[Conquest-Popup] Performing visual update for tile at {tile?.coordinates}");
             if (instance != null)
             {
                 AudioManager.PlaySFXAtTile(SFXTypes.Capture, tile.coordinates, 0, 1f, 1f);
@@ -685,19 +700,23 @@ namespace PolyMode
 
             ReactionUtils.UpdateSurroundingBordersAndTransportPaths((byte)attackerId, tile);
             ResourceManager.AddResourceOfTypeToResourceBar((byte)attackerId, ResourceManager.Type.Score, score, tile.coordinates, null, "None");
+            Loader.modLogger?.LogInfo("[Conquest-Popup] Visual update completed.");
         }
 
         private static void SafeComplete(Action onComplete, int attackerId)
         {
             try
             {
+                Loader.modLogger?.LogInfo("[Conquest-Popup] SafeComplete called.");
                 if (!GameManager.Client.IsReplay)
                     InputEvents.SelectionCleared();
                 ResourceManager.IncomeChanged((byte)attackerId);
                 onComplete?.Invoke();
+                Loader.modLogger?.LogInfo("[Conquest-Popup] SafeComplete finished.");
             }
             catch
             {
+                Loader.modLogger?.LogWarning("[Conquest-Popup] SafeComplete caught exception, still calling onComplete.");
                 onComplete?.Invoke();
             }
         }
