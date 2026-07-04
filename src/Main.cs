@@ -56,10 +56,18 @@ namespace PolyMode
 
         static Main()
         {
-            var type = typeof(MapGenerator);
-            _addDistanceMethod = type.GetMethod("AddDistanceToProbabilityTable", BindingFlags.NonPublic | BindingFlags.Instance);
-            _calcProbMethod = type.GetMethod("CalculateProbabilityInRange", BindingFlags.NonPublic | BindingFlags.Instance);
-            _indexForProbMethod = type.GetMethod("IndexForProbabilityValueInRange", BindingFlags.NonPublic | BindingFlags.Instance);
+            try
+            {
+                _addDistanceMethod = AccessTools.Method(typeof(MapGenerator), "AddDistanceToProbabilityTable");
+                _calcProbMethod = AccessTools.Method(typeof(MapGenerator), "CalculateProbabilityInRange");
+                _indexForProbMethod = AccessTools.Method(typeof(MapGenerator), "IndexForProbabilityValueInRange");
+
+                Loader.modLogger?.LogInfo("[Reflection] Successfully resolved MapGenerator private methods.");
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Reflection] Failed to resolve methods: {ex.Message}");
+            }
         }
 
         // =========================================================================
@@ -71,7 +79,7 @@ namespace PolyMode
             MapGenerator __instance,
             int width,
             int playerCount,
-            ref List<int> __result)
+            ref Il2CppSystem.Collections.Generic.List<int> __result)
         {
             try
             {
@@ -152,7 +160,13 @@ namespace PolyMode
                     list2.Add(num14);
                 }
 
-                __result = list2;
+                __result = new Il2CppSystem.Collections.Generic.List<int>();
+
+                foreach (int index in list2)
+                {
+                    __result.Add(index);
+                }
+
                 return false; // Skip original method
             }
             catch (Exception ex)
