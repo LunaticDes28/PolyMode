@@ -58,15 +58,18 @@ namespace PolyMode
         {
             try
             {
-                _addDistanceMethod = AccessTools.Method(typeof(MapGenerator), "AddDistanceToProbabilityTable");
-                _calcProbMethod = AccessTools.Method(typeof(MapGenerator), "CalculateProbabilityInRange");
-                _indexForProbMethod = AccessTools.Method(typeof(MapGenerator), "IndexForProbabilityValueInRange");
+                var type = typeof(MapGenerator);
 
-                Loader.modLogger?.LogInfo("[Reflection] Successfully resolved MapGenerator private methods.");
+                _addDistanceMethod = AccessTools.Method(type, "AddDistanceToProbabilityTable");
+                _calcProbMethod = AccessTools.Method(type, "CalculateProbabilityInRange");
+                _indexForProbMethod = AccessTools.Method(type, "IndexForProbabilityValueInRange");
+
+                Loader.modLogger?.LogInfo($"[Reflection] Methods resolved: " +
+                    $"{_addDistanceMethod != null}, {_calcProbMethod != null}, {_indexForProbMethod != null}");
             }
             catch (Exception ex)
             {
-                Loader.modLogger?.LogError($"[Reflection] Failed to resolve methods: {ex.Message}");
+                Loader.modLogger?.LogError($"[Reflection] Failed to bind methods: {ex.Message}");
             }
         }
 
@@ -111,7 +114,7 @@ namespace PolyMode
                 }
 
                 // 初始化機率表
-                int[] probabilities = new int[width * width];
+                Il2CppStructArray<int> probabilities = new Il2CppStructArray<int>(width * width);
 
                 for (int j = 1; j < num; j++)
                 {
@@ -122,7 +125,7 @@ namespace PolyMode
                         int num6 = k * num2 + num4;
                         int num7 = j * num2 + num5;
 
-                        _addDistanceMethod?.Invoke(__instance, new object[] { probabilities, width, new WorldCoordinates(num6 - 1, num7 - 1) });
+                        _addDistanceMethod?.Invoke(__instance, new object[] { probabilities, width, new WorldCoordinates(num6 - 1, num7 - 1), num2 });
                     }
                 }
 
