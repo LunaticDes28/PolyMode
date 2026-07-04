@@ -23,21 +23,17 @@ namespace PolyMode
 
             try
             {
-                // If player generate new game without mode re-selection, this function will be skipped
-                // It is because bool flag is disabled after map generation, and only applied when mode is re-selected 
                 bool isConquest = UI_2.IsConquestSelected;
                 if (!isConquest) return;
 
                 Loader.modLogger?.LogInfo("[Conquest-Map] Conquest Mode selected!");
 
-                // Pseudo GameSettings in GameState
                 int registeredConquestId = PolyMod.Registry.gameModesAutoidx - 1;
+                
+                // Pseudo GameSettings in GameState
                 gameState.Settings.RulesGameMode = (GameMode)registeredConquestId;
                 gameState.Settings.rules.WinByExtermination = true;
                 
-                // Disable bool flag after GameMode initialized
-                UI_2.IsConquestSelected = false;
-
                 Loader.modLogger?.LogInfo($"[Conquest-Map] RulesGameMode stamped as ID: {registeredConquestId}");
             }
             catch (Exception ex)
@@ -597,7 +593,7 @@ namespace PolyMode
             }
 
             cityTile.owner = 0;
-            cityTile.capitalOf = 0;
+            // cityTile.capitalOf = 0;  // leave mark of capital
 
             // 6. Wipe player if necessary
             if (originalOwner != null && attacker != null && !originalOwner.IsAlive(gameState, gameState.Settings.rules.PlayerDeathCondition))
@@ -740,7 +736,7 @@ namespace PolyMode
                     string title = isPreviousOwnerCapital ? "Good News!" : "City Conquered!";
                     string message = isPreviousOwnerCapital 
                         ? $"You have captured the {linkedTribeNameWithSpace} capital! All their trade connections are destroyed forever." 
-                        : $"{instance?.Improvement.State.name} is now a ruin on the ground.";
+                        : $"The city is now a ruin on the ground.";
 
                         NotificationBase ntf = NotificationManager.GetBasicNotification();
                         ntf.header.text = title;
@@ -756,7 +752,7 @@ namespace PolyMode
                     string title = isPreviousOwnerCapital ? "Bad News!" : "City Conquered!";
                     string message = isPreviousOwnerCapital 
                         ? $"Your capital has fallen to {linkedTribeNameWithSpace}. All your trade connections are lost forever." 
-                        : $"{instance?.Improvement.State.name} is wiped out from existence.";
+                        : $"Your city is wiped out from existence.";
 
                     if (!isPreviousOwnerCapital) {
 
