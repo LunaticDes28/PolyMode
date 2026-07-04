@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
+using System.Reflection;
 
 namespace PolyMode
 {
@@ -49,138 +50,116 @@ namespace PolyMode
         // B. Capital Generation Logics
         // =========================================================================
 
-        // =========================================================================
-        // 1. 逆向補丁 (Reverse Patches)
-        // Harmony 會在運行時自動將原版的 private 方法機器碼填入這些 Stub 中
-        // =========================================================================
-        
-        [HarmonyReversePatch]
-        [HarmonyPatch(typeof(MapGenerator), "AddDistanceToProbabilityTable")]
-        public static void AddDistanceToProbabilityTableStub(MapGenerator instance, int[] probabilities, int width, WorldCoordinates coordinates)
-        {
-            // 這裡故意留空，編譯器防錯，Harmony 在執行時會自動替換其實體
-        }
+        private static MethodInfo? _addDistanceMethod;
+        private static MethodInfo? _calcProbMethod;
+        private static MethodInfo? _indexForProbMethod;
 
-        [HarmonyReversePatch]
-        [HarmonyPatch(typeof(MapGenerator), "CalculateProbabilityInRange")]
-        public static int CalculateProbabilityInRangeStub(MapGenerator instance, int[] probabilities, int width, int startX, int endX, int startY, int endY)
+        static Main()
         {
-            return 0;
-        }
-
-        [HarmonyReversePatch]
-        [HarmonyPatch(typeof(MapGenerator), "IndexForProbabilityValueInRange")]
-        public static int IndexForProbabilityValueInRangeStub(MapGenerator instance, int[] probabilities, int width, int value, int startX, int endX, int startY, int endY)
-        {
-            return 0;
+            var type = typeof(MapGenerator);
+            _addDistanceMethod = type.GetMethod("AddDistanceToProbabilityTable", BindingFlags.NonPublic | BindingFlags.Instance);
+            _calcProbMethod = type.GetMethod("CalculateProbabilityInRange", BindingFlags.NonPublic | BindingFlags.Instance);
+            _indexForProbMethod = type.GetMethod("IndexForProbabilityValueInRange", BindingFlags.NonPublic | BindingFlags.Instance);
         }
 
         // =========================================================================
-        // 2. 主前置補丁 (Main Prefix Patch)
-        // 徹底接管原本的選點流程，重構網格域為環形邊緣分佈
+        // 主前置補丁
         // =========================================================================
-        
         [HarmonyPrefix]
-        [HarmonyPatch(typeof(MapGenerator), "GeneratePlayerCapitalPositions")]
-        private static bool GeneratePlayerCapitalPositionsPrefix(
-            MapGenerator __instance, // 直接宣告 MapGenerator 實例以供 Stub 方法使用
-            int width, 
-            int playerCount, 
-            ref List<int> __result) // 攔截並改寫返回值
+        [HarmonyPatch(typeof(MapGenerator), nameof(MapGenerator.GeneratePlayerCapitalPositions))]
+        private static bool GeneratePlayerCapitalPositions_Prefix(
+            MapGenerator __instance,
+            int width,
+            int playerCount,
+            ref List<int> __result)
         {
-            // 根據玩家人數決定外圍環形邊框的維度 (num x num)
-            // 4人以下 -> 2x2 (4域，全部貼邊)
-            // 5~8人  -> 3x3 (9域，踢除中心1個，剩8域)
-            // 9~12人 -> 4x4 (16域，踢除內陸4個，剩12域)
-            int num;
-            if (playerCount <= 4) num = 2;
-            else if (playerCount <= 8) num = 3;
-            else num = 4; // 你的自訂模式最大支援 12 人
-
-            int num2 = width / num;
-            if (num2 < 3)
+            try
             {
-                throw new Exception($"Domain size {num2} is too small to allow for an isolated capital for all {playerCount} players");
-            }
+                Loader.modLogger?.LogInfo($"[CapitalGenerator] GeneratePlayerCapitalPositions_Prefix started. Players={playerCount}, Width={width}");
 
-            int val = width - num2 * num;
-            int num3 = num * num;
+                int num;
+                if (playerCount <= 4) num = 2;
+                else if (playerCount <= 8) num = 3;
+                else num = 4;
 
-            // 核心重構：篩選出「只處於外圍邊緣」的 Domain 索引
-            List<int> list = new List<int>();
-            for (int i = 0; i < num3; i++)
-            {
-                int domainX = i % num;
-                int domainY = i / num;
-
-                // 數學矩陣判定：是否靠在地圖最外側的四個邊界上
-                bool isEdgeDomain = (domainX == 0 || domainX == num - 1 || domainY == 0 || domainY == num - 1);
-
-                if (isEdgeDomain)
+                int num2 = width / num;
+                if (num2 < 3)
                 {
-                    list.Add(i); // 只有外圍邊緣域被列入首都候選區
+                    Loader.modLogger?.LogError($"Domain size {num2} is too small for {playerCount} players");
+                    return true; // Let original code handle error
                 }
-            }
 
-            // 初始化機率表，並完全繼承原版代碼的首都互斥權重計算
-            int[] probabilities = new int[width * width];
-            for (int j = 1; j < num; j++)
-            {
-                for (int k = 1; k < num; k++)
+                int val = width - num2 * num;
+                int num3 = num * num;
+
+                // 篩選外圍邊緣 Domain
+                List<int> list = new List<int>();
+                for (int i = 0; i < num3; i++)
                 {
-                    int num4 = Math.Min(val, Math.Max(1, Math.Min(val, k) - 1));
-                    int num5 = Math.Min(val, Math.Max(1, Math.Min(val, j) - 1));
-                    int num6 = k * num2 + num4;
-                    int num7 = j * num2 + num5;
-                    
-                    // 調用 ReversePatch Stub，零反射性能損耗，100% 複製原版權重因素
-                    AddDistanceToProbabilityTableStub(__instance, probabilities, width, new WorldCoordinates(num6 - 1, num7 - 1));
+                    int domainX = i % num;
+                    int domainY = i / num;
+                    if (domainX == 0 || domainX == num - 1 || domainY == 0 || domainY == num - 1)
+                        list.Add(i);
                 }
-            }
 
-            // 分配首都位置
-            List<int> list2 = new List<int>(playerCount);
-            for (int l = 0; l < playerCount; l++)
-            {
-                // 從我們篩選過、純邊緣的環形 list 中隨機抽選一個 Domain 塊
-                int index = __instance.random.Range(0, list.Count);
-                int index2 = list[index];
-                list.RemoveAt(index); // 確保一個 Domain 塊只會誕生一個首都
+                // 初始化機率表
+                int[] probabilities = new int[width * width];
 
-                WorldCoordinates worldCoordinates = WorldCoordinates.FromIndex(index2, num);
-                int num8 = Math.Min(val, Math.Max(1, Math.Min(val, worldCoordinates.X) - 1));
-                int num9 = Math.Min(val, Math.Max(1, Math.Min(val, worldCoordinates.Y) - 1));
-                int num10 = worldCoordinates.X * num2 + num8;
-                int num11 = worldCoordinates.Y * num2 + num9;
-                int num12 = (num2 == 3) ? 1 : 2;
-                int num13 = 1;
-                int startX = Math.Max(num12, num10 + num13);
-                int endX = Math.Min(width - num12, num10 + num2 - num13);
-                int startY = Math.Max(num12, num11 + num13);
-                int endY = Math.Min(width - num12, num11 + num2 - num13);
-                
-                // 調用 Stub 方法在當前 Domain 分區內進行基於原版互斥權重的隨機選點
-                int max = CalculateProbabilityInRangeStub(__instance, probabilities, width, startX, endX, startY, endY);
-                int value = __instance.random.Range(0, max);
-                int num14 = IndexForProbabilityValueInRangeStub(__instance, probabilities, width, value, startX, endX, startY, endY);
-                
-                // 原版日誌輸出 (如果 Log 類別在你的專案中編譯報錯，可以直接刪除這四行)
-                Log.Verbose("{0} Adding capital at {1}, {2} for player {3}", (Il2CppSystem.Object[])(new object[]
+                for (int j = 1; j < num; j++)
                 {
-                    "<color=#639ad8>[MapGenerator]</color>",
-                    WorldCoordinates.FromIndex(num14, width).X,
-                    WorldCoordinates.FromIndex(num14, width).Y,
-                    l
-                }));
-                
-                list2.Add(num14);
-            }
+                    for (int k = 1; k < num; k++)
+                    {
+                        int num4 = Math.Min(val, Math.Max(1, Math.Min(val, k) - 1));
+                        int num5 = Math.Min(val, Math.Max(1, Math.Min(val, j) - 1));
+                        int num6 = k * num2 + num4;
+                        int num7 = j * num2 + num5;
 
-            // 將結果移交給 Harmony 傳回給遊戲
-            __result = list2;
-            
-            // 返回 false 徹底阻斷並跳過原版方法的執行，防止原版生成覆蓋我們的結果
-            return false; 
+                        _addDistanceMethod?.Invoke(__instance, new object[] { probabilities, width, new WorldCoordinates(num6 - 1, num7 - 1) });
+                    }
+                }
+
+                // 分配首都位置
+                List<int> list2 = new List<int>(playerCount);
+
+                for (int l = 0; l < playerCount; l++)
+                {
+                    if (list.Count == 0) break;
+
+                    int index = __instance.random.Range(0, list.Count);
+                    int index2 = list[index];
+                    list.RemoveAt(index);
+
+                    WorldCoordinates worldCoordinates = WorldCoordinates.FromIndex(index2, num);
+                    int num8 = Math.Min(val, Math.Max(1, Math.Min(val, worldCoordinates.X) - 1));
+                    int num9 = Math.Min(val, Math.Max(1, Math.Min(val, worldCoordinates.Y) - 1));
+                    int num10 = worldCoordinates.X * num2 + num8;
+                    int num11 = worldCoordinates.Y * num2 + num9;
+
+                    int num12 = (num2 == 3) ? 1 : 2;
+                    int num13 = 1;
+                    int startX = Math.Max(num12, num10 + num13);
+                    int endX = Math.Min(width - num12, num10 + num2 - num13);
+                    int startY = Math.Max(num12, num11 + num13);
+                    int endY = Math.Min(width - num12, num11 + num2 - num13);
+
+                    int max = (int)(_calcProbMethod?.Invoke(__instance, new object[] { probabilities, width, startX, endX, startY, endY }) ?? 0);
+                    int value = __instance.random.Range(0, max);
+
+                    int num14 = (int)(_indexForProbMethod?.Invoke(__instance, new object[] { probabilities, width, value, startX, endX, startY, endY }) ?? 0);
+
+                    Loader.modLogger?.LogInfo($"[CapitalGenerator] Added capital at {WorldCoordinates.FromIndex(num14, width)} for player {l}");
+
+                    list2.Add(num14);
+                }
+
+                __result = list2;
+                return false; // Skip original method
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[CapitalGenerator] Critical error: {ex}");
+                return true; // Fallback to original
+            }
         }
 
         // =========================================================================

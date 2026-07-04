@@ -3,6 +3,7 @@ using PolytopiaBackendBase.Game;
 using UnityEngine;
 using System;
 using Il2CppInterop.Runtime;
+using Il2CppInterop.Runtime.InteropTypes.Arrays;
 
 namespace PolyMode
 {
@@ -20,19 +21,17 @@ namespace PolyMode
             {
                 if (!IsConquestSelected) return true;
 
-                // Intercept at the timing when 13/14/15/16 opponents are being registered
-                if (label != null 
-                    && (label.Equals("13") || label.Equals("14") || label.Equals("15") || label.Equals("16")))
+                if (label != null && (label == "11" || label == "12" || label == "13" || label == "14" || label == "15"))
                 {
-                    Loader.modLogger?.LogInfo($"[Conquest-UI] ✅ SUCCESS: Manually intercepted {label} button via AddItem Prefix!.");
-                    return false;
+                    Loader.modLogger?.LogInfo($"[Conquest-UI] Intercepted {label} opponents button.");
+                    return false; // Block original addition
                 }
 
                 return true;
             }
             catch (Exception ex)
             {
-                Loader.modLogger?.LogError($"[Conquest-UI] AddItem pre detour encountered an issue: {ex.Message}");
+                Loader.modLogger?.LogError($"[Conquest-UI] AddItem Prefix error: {ex}");
                 return true;
             }
         }
@@ -45,65 +44,56 @@ namespace PolyMode
 
             try
             {
-                // Intercept at the timing the last vanilla gamemode (Infinity) is being registered
                 if (label != null && label.Equals("Infinity", StringComparison.OrdinalIgnoreCase))
                 {
                     var labels = __instance.labels;
-                    if (labels == null || labels.Pointer == IntPtr.Zero) return;
+                    if (labels == null) return;
 
+                    // Check if Conquest already exists
                     for (int i = 0; i < labels.Count; i++)
                     {
                         if (labels[i] != null && labels[i].Equals("Conquest", StringComparison.OrdinalIgnoreCase))
-                        {
-                            return; 
-                        }
+                            return;
                     }
 
                     int registeredConquestId = PolyMod.Registry.gameModesAutoidx - 1;
-
                     __instance.AddItem("Conquest", registeredConquestId);
-                    
-                    Loader.modLogger?.LogInfo($"[Conquest-UI] ✅ SUCCESS: Naturally appended 'Conquest' button via AddItem Postfix! Linked to dynamic ID {registeredConquestId}.");
+
+                    Loader.modLogger?.LogInfo($"[Conquest-UI] Added 'Conquest' mode with ID {registeredConquestId}");
                 }
             }
             catch (Exception ex)
             {
-                Loader.modLogger?.LogError($"[Conquest-UI] AddItem post detour encountered an issue: {ex.Message}");
+                Loader.modLogger?.LogError($"[Conquest-UI] AddItem Postfix error: {ex}");
             }
         }
 
-        // 監聽點擊事件
         [HarmonyPostfix]
         [HarmonyPatch(typeof(GameSetupScreen_UI2), nameof(GameSetupScreen_UI2.OnGameModeChanged))]
         public static void OnGameModeChanged_Postfix(GameSetupScreen_UI2 __instance, int index)
         {
-            if (__instance.gameModeData == null || __instance.gameModeData.labels == null) return;
+            if (__instance?.gameModeData?.labels == null) return;
 
             try
             {
-                if (index >= 0 && index < __instance.gameModeData.labels.Count)
+                if (index < 0 || index >= __instance.gameModeData.labels.Count) return;
+
+                string selectedText = __instance.gameModeData.labels[index]?.ToString() ?? "";
+
+                if (selectedText.Equals("Conquest", StringComparison.OrdinalIgnoreCase))
                 {
-                    var activeItem = __instance.gameModeData.labels[index];
-                    if (activeItem != null)
-                    {
-                        string selectedText = activeItem.ToString();
-                        
-                        if (selectedText.Equals("Conquest", StringComparison.OrdinalIgnoreCase))
-                        {
-                            IsConquestSelected = true;
-                            Loader.modLogger?.LogInfo("[Conquest-UI] Conquest clicked. Isolated global variable 'IsConquestSelected' set to TRUE.");
-                        }
-                        else
-                        {
-                            IsConquestSelected = false;
-                            Loader.modLogger?.LogInfo($"[Conquest-UI] Other mode clicked ({selectedText}). Isolated global variable 'IsConquestSelected' set to FALSE.");
-                        }
-                    }
+                    IsConquestSelected = true;
+                    Loader.modLogger?.LogInfo("[Conquest-UI] Conquest mode selected.");
+                }
+                else
+                {
+                    IsConquestSelected = false;
+                    Loader.modLogger?.LogInfo($"[Conquest-UI] Mode changed to: {selectedText}");
                 }
             }
             catch (Exception ex)
             {
-                Loader.modLogger?.LogWarning($"[Conquest-UI] Selection logger exception: {ex.Message}");
+                Loader.modLogger?.LogWarning($"[Conquest-UI] OnGameModeChanged error: {ex.Message}");
             }
         }
     }
