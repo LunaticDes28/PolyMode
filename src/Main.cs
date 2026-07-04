@@ -668,13 +668,14 @@ namespace PolyMode
                 GameManager.GameState.TryGetPlayer(__instance.action.PlayerId, out playerState);
 		        PlayerState prevOwnerState;
 		        bool hasPreviousOwner = GameManager.GameState.TryGetPlayer(__instance.action.OldOwnerId, out prevOwnerState);
-		        bool flag = GameManager.IsPlayerViewing(__instance.action.OldOwnerId) && !GameManager.Client.IsSpectating;
+		        bool isPreviousOwnerCapital = hasPreviousOwner && tile.capitalOf == __instance.action.OldOwnerId;
+		        bool flag = isPreviousOwnerCapital && GameManager.IsPlayerViewing(__instance.action.OldOwnerId) && !GameManager.Client.IsSpectating;
 		        Tile instance = tile.GetInstance();
                 int attackerId = __instance.action.PlayerId;
 
                 CameraController.Instance.CenterOnPosition(tile.coordinates.ToPosition(), 0.8f, null, false);
 
-                ExecutePopupLogic(__instance, onComplete, tile, playerState, prevOwnerState, instance, attackerId);
+                ExecutePopupLogic(__instance, onComplete, tile, playerState, prevOwnerState, isPreviousOwnerCapital, instance, attackerId);
 
                 instance?.StopFire();
                 if (tile.unit != null)
@@ -710,6 +711,7 @@ namespace PolyMode
             TileData tile,
             PlayerState playerState,
             PlayerState prevOwnerState,
+            bool isPreviousOwnerCapital,
             Tile instance,
             int attackerId)
         {
@@ -730,22 +732,20 @@ namespace PolyMode
                 ReactionUtils.UpdateSurroundingBordersAndTransportPaths((byte)attackerId, tile);
                 ResourceManager.AddResourceOfTypeToResourceBar((byte)attackerId, ResourceManager.Type.Score, __instance.action.Score, tile.coordinates, null, "None");
 
-                bool isCapital = tile.capitalOf != 0;
-
                 if (GameManager.IsPlayerViewing((byte)attackerId) && !GameManager.Client.IsSpectating)
                 {
                     // Attacker - No button
                     string linkedTribeNameWithSpace = prevOwnerState.GetLinkedTribeNameWithSpace(GameManager.GameState);
 					
-                    string title = isCapital ? "Good News!" : "City Conquered!";
-                    string message = isCapital 
+                    string title = isPreviousOwnerCapital ? "Good News!" : "City Conquered!";
+                    string message = isPreviousOwnerCapital 
                         ? $"You have captured the {linkedTribeNameWithSpace} capital! All their trade connections are destroyed forever." 
                         : $"{instance?.Improvement.State.name} is now a ruin on the ground.";
 
                         NotificationBase ntf = NotificationManager.GetBasicNotification();
                         ntf.header.text = title;
                         ntf.description.text = message;
-                        ntf.showTime = 4;       
+                        ntf.showTime = 3;       
                         ntf.Show(); 
                 }
                 else if (GameManager.IsPlayerViewing(__instance.action.OldOwnerId) && !GameManager.Client.IsSpectating)
@@ -753,17 +753,17 @@ namespace PolyMode
                     // Defender - With button
                     string linkedTribeNameWithSpace = playerState.GetLinkedTribeNameWithSpace(GameManager.GameState);
 						
-                    string title = isCapital ? "Bad News!" : "City Conquered!";
-                    string message = isCapital 
+                    string title = isPreviousOwnerCapital ? "Bad News!" : "City Conquered!";
+                    string message = isPreviousOwnerCapital 
                         ? $"Your capital has fallen to {linkedTribeNameWithSpace}. All your trade connections are lost forever." 
                         : $"{instance?.Improvement.State.name} is wiped out from existence.";
 
-                    if (!isCapital) {
+                    if (!isPreviousOwnerCapital) {
 
                         NotificationBase ntf = NotificationManager.GetBasicNotification();
                         ntf.header.text = title;
                         ntf.description.text = message;
-                        ntf.showTime = 4;       
+                        ntf.showTime = 3;       
                         ntf.Show();       
 
                     } else {
@@ -790,10 +790,6 @@ namespace PolyMode
 						iconPopup.buttonData = buttonArray;
                         iconPopup.Show();
                     }
-                }
-                else
-                {
-                    onComplete?.Invoke();
                 }
             }
             catch (Exception ex)
