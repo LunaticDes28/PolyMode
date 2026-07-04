@@ -10,6 +10,33 @@ namespace PolyMode
     {
         public static bool IsConquestSelected = false;
 
+        [HarmonyPrefix]
+        [HarmonyPatch(typeof(UIHorizontalListData), nameof(UIHorizontalListData.AddItem))]
+        public static bool AddItem_Prefix(UIHorizontalListData __instance, string label, int id)
+        {
+            if (__instance == null || __instance.Pointer == IntPtr.Zero) return true;
+
+            try
+            {
+                if (!IsConquestSelected) return true;
+
+                // Intercept at the timing when 13/14/15/16 opponents are being registered
+                if (label != null 
+                    && (label.Equals("13") || label.Equals("14") || label.Equals("15") || label.Equals("16")))
+                {
+                    Loader.modLogger?.LogInfo($"[Conquest-UI] ✅ SUCCESS: Manually intercepted {label} button via AddItem Prefix!.");
+                    return false;
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest-UI] AddItem pre detour encountered an issue: {ex.Message}");
+                return true;
+            }
+        }
+
         [HarmonyPostfix]
         [HarmonyPatch(typeof(UIHorizontalListData), nameof(UIHorizontalListData.AddItem))]
         public static void AddItem_Postfix(UIHorizontalListData __instance, string label, int id)

@@ -46,7 +46,145 @@ namespace PolyMode
         }
 
         // =========================================================================
-        // B. Village Generation + Logics
+        // B. Capital Generation Logics
+        // =========================================================================
+
+        // =========================================================================
+        // 1. 逆向補丁 (Reverse Patches)
+        // Harmony 會在運行時自動將原版的 private 方法機器碼填入這些 Stub 中
+        // =========================================================================
+        
+        [HarmonyReversePatch]
+        [HarmonyPatch(typeof(MapGenerator), "AddDistanceToProbabilityTable")]
+        public static void AddDistanceToProbabilityTableStub(MapGenerator instance, int[] probabilities, int width, WorldCoordinates coordinates)
+        {
+            // 這裡故意留空，編譯器防錯，Harmony 在執行時會自動替換其實體
+        }
+
+        [HarmonyReversePatch]
+        [HarmonyPatch(typeof(MapGenerator), "CalculateProbabilityInRange")]
+        public static int CalculateProbabilityInRangeStub(MapGenerator instance, int[] probabilities, int width, int startX, int endX, int startY, int endY)
+        {
+            return 0;
+        }
+
+        [HarmonyReversePatch]
+        [HarmonyPatch(typeof(MapGenerator), "IndexForProbabilityValueInRange")]
+        public static int IndexForProbabilityValueInRangeStub(MapGenerator instance, int[] probabilities, int width, int value, int startX, int endX, int startY, int endY)
+        {
+            return 0;
+        }
+
+        // =========================================================================
+        // 2. 主前置補丁 (Main Prefix Patch)
+        // 徹底接管原本的選點流程，重構網格域為環形邊緣分佈
+        // =========================================================================
+        
+        [HarmonyPrefix]
+        [HarmonyPatch(typeof(MapGenerator), "GeneratePlayerCapitalPositions")]
+        private static bool GeneratePlayerCapitalPositionsPrefix(
+            MapGenerator __instance, // 直接宣告 MapGenerator 實例以供 Stub 方法使用
+            int width, 
+            int playerCount, 
+            ref List<int> __result) // 攔截並改寫返回值
+        {
+            // 根據玩家人數決定外圍環形邊框的維度 (num x num)
+            // 4人以下 -> 2x2 (4域，全部貼邊)
+            // 5~8人  -> 3x3 (9域，踢除中心1個，剩8域)
+            // 9~12人 -> 4x4 (16域，踢除內陸4個，剩12域)
+            int num;
+            if (playerCount <= 4) num = 2;
+            else if (playerCount <= 8) num = 3;
+            else num = 4; // 你的自訂模式最大支援 12 人
+
+            int num2 = width / num;
+            if (num2 < 3)
+            {
+                throw new Exception($"Domain size {num2} is too small to allow for an isolated capital for all {playerCount} players");
+            }
+
+            int val = width - num2 * num;
+            int num3 = num * num;
+
+            // 核心重構：篩選出「只處於外圍邊緣」的 Domain 索引
+            List<int> list = new List<int>();
+            for (int i = 0; i < num3; i++)
+            {
+                int domainX = i % num;
+                int domainY = i / num;
+
+                // 數學矩陣判定：是否靠在地圖最外側的四個邊界上
+                bool isEdgeDomain = (domainX == 0 || domainX == num - 1 || domainY == 0 || domainY == num - 1);
+
+                if (isEdgeDomain)
+                {
+                    list.Add(i); // 只有外圍邊緣域被列入首都候選區
+                }
+            }
+
+            // 初始化機率表，並完全繼承原版代碼的首都互斥權重計算
+            int[] probabilities = new int[width * width];
+            for (int j = 1; j < num; j++)
+            {
+                for (int k = 1; k < num; k++)
+                {
+                    int num4 = Math.Min(val, Math.Max(1, Math.Min(val, k) - 1));
+                    int num5 = Math.Min(val, Math.Max(1, Math.Min(val, j) - 1));
+                    int num6 = k * num2 + num4;
+                    int num7 = j * num2 + num5;
+                    
+                    // 調用 ReversePatch Stub，零反射性能損耗，100% 複製原版權重因素
+                    AddDistanceToProbabilityTableStub(__instance, probabilities, width, new WorldCoordinates(num6 - 1, num7 - 1));
+                }
+            }
+
+            // 分配首都位置
+            List<int> list2 = new List<int>(playerCount);
+            for (int l = 0; l < playerCount; l++)
+            {
+                // 從我們篩選過、純邊緣的環形 list 中隨機抽選一個 Domain 塊
+                int index = __instance.random.Range(0, list.Count);
+                int index2 = list[index];
+                list.RemoveAt(index); // 確保一個 Domain 塊只會誕生一個首都
+
+                WorldCoordinates worldCoordinates = WorldCoordinates.FromIndex(index2, num);
+                int num8 = Math.Min(val, Math.Max(1, Math.Min(val, worldCoordinates.X) - 1));
+                int num9 = Math.Min(val, Math.Max(1, Math.Min(val, worldCoordinates.Y) - 1));
+                int num10 = worldCoordinates.X * num2 + num8;
+                int num11 = worldCoordinates.Y * num2 + num9;
+                int num12 = (num2 == 3) ? 1 : 2;
+                int num13 = 1;
+                int startX = Math.Max(num12, num10 + num13);
+                int endX = Math.Min(width - num12, num10 + num2 - num13);
+                int startY = Math.Max(num12, num11 + num13);
+                int endY = Math.Min(width - num12, num11 + num2 - num13);
+                
+                // 調用 Stub 方法在當前 Domain 分區內進行基於原版互斥權重的隨機選點
+                int max = CalculateProbabilityInRangeStub(__instance, probabilities, width, startX, endX, startY, endY);
+                int value = __instance.random.Range(0, max);
+                int num14 = IndexForProbabilityValueInRangeStub(__instance, probabilities, width, value, startX, endX, startY, endY);
+                
+                // 原版日誌輸出 (如果 Log 類別在你的專案中編譯報錯，可以直接刪除這四行)
+                Log.Verbose("{0} Adding capital at {1}, {2} for player {3}", (Il2CppSystem.Object[])(new object[]
+                {
+                    "<color=#639ad8>[MapGenerator]</color>",
+                    WorldCoordinates.FromIndex(num14, width).X,
+                    WorldCoordinates.FromIndex(num14, width).Y,
+                    l
+                }));
+                
+                list2.Add(num14);
+            }
+
+            // 將結果移交給 Harmony 傳回給遊戲
+            __result = list2;
+            
+            // 返回 false 徹底阻斷並跳過原版方法的執行，防止原版生成覆蓋我們的結果
+            return false; 
+        }
+
+        // =========================================================================
+        // C. Village Generation Logics
         // =========================================================================
         [HarmonyPostfix]
         [HarmonyPatch(typeof(MapGenerator), nameof(MapGenerator.GenerateInternal))]
@@ -159,7 +297,7 @@ namespace PolyMode
         }
 
         // =========================================================================
-        // C. City Distribution
+        // D. City Distribution & Initialization
         // =========================================================================
         [HarmonyPostfix]
         [HarmonyPatch(typeof(StartMatchAction), nameof(StartMatchAction.ExecuteDefault))]
@@ -244,9 +382,6 @@ namespace PolyMode
             return closestVillage;
         }
 
-        // =========================================================================
-        // D. Full City Initialization
-        // =========================================================================
         private static void ConquestInitializeCity(GameState state, TileData tile, PlayerState player)
         {
             try
@@ -534,14 +669,16 @@ namespace PolyMode
 
                 TileData tile = GameManager.GameState.Map.GetTile(__instance.action.Coordinates);
                 PlayerState playerState;
-		        GameManager.GameState.TryGetPlayer(__instance.action.PlayerId, out playerState);
+                GameManager.GameState.TryGetPlayer(__instance.action.PlayerId, out playerState);
+		        PlayerState prevOwnerState;
+		        bool hasPreviousOwner = GameManager.GameState.TryGetPlayer(__instance.action.OldOwnerId, out prevOwnerState);
 		        bool flag = GameManager.IsPlayerViewing(__instance.action.OldOwnerId) && !GameManager.Client.IsSpectating;
 		        Tile instance = tile.GetInstance();
                 int attackerId = __instance.action.PlayerId;
 
                 CameraController.Instance.CenterOnPosition(tile.coordinates.ToPosition(), 0.8f, null, false);
 
-                ExecutePopupLogic(__instance, onComplete, tile, playerState, instance, attackerId);
+                ExecutePopupLogic(__instance, onComplete, tile, playerState, prevOwnerState, instance, attackerId);
 
                 instance?.StopFire();
                 if (tile.unit != null)
@@ -554,7 +691,7 @@ namespace PolyMode
                 }
                 if (!GameManager.Client.IsReplay)
                     InputEvents.SelectionCleared();
-                ResourceManager.IncomeChanged(__instance.action.PlayerId);
+                    ResourceManager.IncomeChanged(__instance.action.PlayerId);
                 if (!flag)
                 {
                     GameManager.DelayCall(2500, onComplete);
@@ -576,6 +713,7 @@ namespace PolyMode
             Action onComplete,
             TileData tile,
             PlayerState playerState,
+            PlayerState prevOwnerState,
             Tile instance,
             int attackerId)
         {
@@ -596,51 +734,66 @@ namespace PolyMode
                 ReactionUtils.UpdateSurroundingBordersAndTransportPaths((byte)attackerId, tile);
                 ResourceManager.AddResourceOfTypeToResourceBar((byte)attackerId, ResourceManager.Type.Score, __instance.action.Score, tile.coordinates, null, "None");
 
-                BasicPopup iconPopup = PopupManager.GetIconPopup();
-                if (iconPopup == null)
-                {
-                    onComplete?.Invoke();
-                    return;
-                }
-
-                iconPopup.sprite = UIManager.IconData.GetSprite("CapitalCapture");
                 bool isCapital = tile.capitalOf != 0;
 
                 if (GameManager.IsPlayerViewing((byte)attackerId) && !GameManager.Client.IsSpectating)
                 {
                     // Attacker - No button
-                    string title = isCapital ? "Capital conquered!" : "City conquered.";
+                    string linkedTribeNameWithSpace = prevOwnerState.GetLinkedTribeNameWithSpace(GameManager.GameState);
+					
+                    string title = isCapital ? "Good News!" : "City Conquered!";
                     string message = isCapital 
-                        ? "The legendary capital has fallen to you. Empire interconnection is forever lost." 
-                        : "You have eradicated the city from existence. Infrastructure remains as ruins.";
+                        ? $"You have captured the {linkedTribeNameWithSpace} capital! All their trade connections are destroyed forever." 
+                        : $"{instance?.Improvement.State.name} is now a ruin on the ground.";
 
-                    NotificationManager.Notify(message, title, null, playerState);
+                        NotificationBase ntf = NotificationManager.GetBasicNotification();
+                        ntf.header.text = title;
+                        ntf.description.text = message;
+                        ntf.showTime = 4;       
+                        ntf.Show(); 
                 }
                 else if (GameManager.IsPlayerViewing(__instance.action.OldOwnerId) && !GameManager.Client.IsSpectating)
                 {
                     // Defender - With button
-                    iconPopup.Header = isCapital ? "Capital conquered!" : "City conquered.";
-                    iconPopup.Description = isCapital 
-                        ? "Your empire capital has fallen. All interconnection is forever lost." 
-                        : "Your city is eradicated from existence. Infrastructure remains as ruins.";
+                    string linkedTribeNameWithSpace = playerState.GetLinkedTribeNameWithSpace(GameManager.GameState);
+						
+                    string title = isCapital ? "Bad News!" : "City Conquered!";
+                    string message = isCapital 
+                        ? $"Your capital has fallen to {linkedTribeNameWithSpace}. All your trade connections are lost forever." 
+                        : $"{instance?.Improvement.State.name} is wiped out from existence.";
 
-                    _buttonActionHolder = () => onComplete?.Invoke();
+                    if (!isCapital) {
 
-                    IntPtr ptr = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(_buttonActionHolder);
-                    Il2CppSystem.Action il2cppAction = new Il2CppSystem.Action(ptr);
+                        NotificationBase ntf = NotificationManager.GetBasicNotification();
+                        ntf.header.text = title;
+                        ntf.description.text = message;
+                        ntf.showTime = 4;       
+                        ntf.Show();       
 
-                    var buttonArray = new Il2CppReferenceArray<PopupBase.PopupButtonData>(1);
-                    buttonArray[0] = new PopupBase.PopupButtonData(
-                        "buttons.ok",
-                        PopupBase.PopupButtonData.States.Selected,
-                        il2cppAction,                   
-                        -1,
-                        true,
-                        null
-                    );
+                    } else {
 
-                    iconPopup.buttonData = buttonArray;
-                    iconPopup.Show();
+                        _buttonActionHolder = () => onComplete?.Invoke();
+                        IntPtr ptr = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(_buttonActionHolder);
+                        Il2CppSystem.Action il2cppAction = new Il2CppSystem.Action(ptr);
+
+                        var buttonArray = new Il2CppReferenceArray<PopupBase.PopupButtonData>(1);
+                        buttonArray[0] = new PopupBase.PopupButtonData(
+                            "buttons.ok",
+                            PopupBase.PopupButtonData.States.Selected,
+                            il2cppAction,                   
+                            -1,
+                            true,
+                            null
+                        );
+
+                        BasicPopup iconPopup = PopupManager.GetIconPopup();
+                        iconPopup.sprite = UIManager.IconData.GetSprite("CapitalCapture");
+                        iconPopup.Header = title;
+                        iconPopup.Description = message;
+                        iconPopup.SetTribeInfoButtons(TextType.Description);
+						iconPopup.buttonData = buttonArray;
+                        iconPopup.Show();
+                    }
                 }
                 else
                 {
