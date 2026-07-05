@@ -10,21 +10,43 @@ namespace PolyMode
     public static class UI_2
     {
         public static bool IsConquestSelected = false;
-
+        
         [HarmonyPrefix]
         [HarmonyPatch(typeof(UIHorizontalListData), nameof(UIHorizontalListData.AddItem))]
         public static bool AddItem_Prefix(UIHorizontalListData __instance, string label, int id)
         {
-            if (__instance == null || __instance.Pointer == IntPtr.Zero) return true;
+            // 💡 1. 移除不安全的指標判斷（防範 Access Violation），僅保留安全的受管 null 檢查
+            if (__instance == null) return true;
 
             try
             {
-                if (!IsConquestSelected) return true;
+                GameSetupScreen_UI2? activeScreen = null;
+
+                var rawScreen = UnityEngine.Object.FindObjectOfType(Il2CppInterop.Runtime.Il2CppType.Of<GameSetupScreen_UI2>());
+                
+                if (rawScreen != null)
+                {
+                    activeScreen = rawScreen.TryCast<GameSetupScreen_UI2>();
+                }
+
+                if (activeScreen != null && activeScreen.gameModeData != null)
+                {
+                    int registeredConquestId = PolyMod.Registry.gameModesAutoidx - 1;
+                    
+                    if (activeScreen.gameModeData.selectedObject != registeredConquestId) 
+                    {
+                        return true;
+                    }
+                }
+                else
+                {
+                    return true; 
+                }
 
                 if (int.TryParse(label, out int count) && count >= 8 && count <= 15)
                 {
-                    Loader.modLogger?.LogInfo($"[Conquest-UI] Intercepted {label} opponents button.");
-                    return false; // Block original addition
+                    Loader.modLogger?.LogInfo($"[Conquest-UI] [Auto-Detected] Intercepted {label} opponents button.");
+                    return false;
                 }
 
                 return true;

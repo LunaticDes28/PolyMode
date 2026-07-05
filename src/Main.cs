@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
+using System.Runtime.InteropServices;
 using System.Reflection;
 
 namespace PolyMode
@@ -35,6 +36,10 @@ namespace PolyMode
                 gameState.Settings.rules.WinByExtermination = true;
                 
                 Loader.modLogger?.LogInfo($"[Conquest-Map] RulesGameMode stamped as ID: {registeredConquestId}");
+
+                UI_2.IsConquestSelected = false;
+                Loader.modLogger?.LogInfo($"[Conquest-Map] Flag IsConquestSelected is set {UI_2.IsConquestSelected}");
+
             }
             catch (Exception ex)
             {
@@ -82,34 +87,45 @@ namespace PolyMode
         {
             try
             {
-                Loader.modLogger?.LogInfo($"[CapitalGenerator] GeneratePlayerCapitalPositions_Prefix started. Players={playerCount}, Width={width}");
+                Loader.modLogger?.LogInfo($"[CapitalGenerator] Clustered City Mod started. Players={playerCount}, Width={width}");
 
-                int num;
-                if (playerCount <= 4) num = 2;
-                else if (playerCount <= 8) num = 3;
-                else num = 4;   // locked because max opponent is 7
+                int num = (playerCount <= 4) ? 2 : 4;
 
                 int num2 = width / num;
                 if (num2 < 3)
                 {
                     Loader.modLogger?.LogError($"Domain size {num2} is too small for {playerCount} players");
-                    return true; // Let original code handle error
+                    return true;
                 }
 
                 int val = width - num2 * num;
                 int num3 = num * num;
 
-                // 篩選外圍邊緣 Domain
                 List<int> list = new List<int>();
                 for (int i = 0; i < num3; i++)
                 {
                     int domainX = i % num;
                     int domainY = i / num;
-                    if (domainX == 0 || domainX == num - 1 || domainY == 0 || domainY == num - 1)
+
+                    if (num == 2)
+                    {
+                        // simple case all quadrants usable
                         list.Add(i);
+                    }
+                    else if (num == 4)
+                    {
+                        // must isEdge but never isCorner
+                        bool isEdge = (domainX == 0 || domainX == 3 || domainY == 0 || domainY == 3);
+                        bool isCorner = (domainX == 0 || domainX == 3) && (domainY == 0 || domainY == 3);
+
+                        // selected quadrants: 2, 3, 5, 8, 9, 12, 14, 15
+                        if (isEdge && !isCorner)
+                        {
+                            list.Add(i);
+                        }
+                    }
                 }
 
-                // 初始化機率表
                 Il2CppStructArray<int> probabilities = new Il2CppStructArray<int>(width * width);
 
                 for (int j = 1; j < num; j++)
@@ -125,7 +141,6 @@ namespace PolyMode
                     }
                 }
 
-                // 分配首都位置
                 List<int> list2 = new List<int>(playerCount);
 
                 for (int l = 0; l < playerCount; l++)
@@ -154,24 +169,23 @@ namespace PolyMode
 
                     int num14 = (int)(_indexForProbMethod?.Invoke(__instance, new object[] { probabilities, width, value, startX, endX, startY, endY }) ?? 0);
 
-                    Loader.modLogger?.LogInfo($"[CapitalGenerator] Added capital at {WorldCoordinates.FromIndex(num14, width)} for player {l}");
+                    Loader.modLogger?.LogInfo($"[CapitalGenerator] Capital placed at {WorldCoordinates.FromIndex(num14, width)} for player {l}");
 
                     list2.Add(num14);
                 }
 
                 __result = new Il2CppSystem.Collections.Generic.List<int>();
-
                 foreach (int index in list2)
                 {
                     __result.Add(index);
                 }
 
-                return false; // Skip original method
+                return false; // 成功接管
             }
             catch (Exception ex)
             {
                 Loader.modLogger?.LogError($"[CapitalGenerator] Critical error: {ex}");
-                return true; // Fallback to original
+                return true; 
             }
         }
 
@@ -698,7 +712,9 @@ namespace PolyMode
             }
         }
 
-        // private static System.Action? _delayActionHolder;
+        private static Il2CppSystem.Action _pinnedIl2CppAction;
+        private static Il2CppReferenceArray<PopupBase.PopupButtonData> _pinnedButtonArray;
+
         private static System.Action? _buttonActionHolder;
 
         private static void ExecutePopupLogic(
@@ -764,27 +780,49 @@ namespace PolyMode
 
                     } else {
 
-                        _buttonActionHolder = () => onComplete?.Invoke();
-                        IntPtr ptr = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(_buttonActionHolder);
-                        Il2CppSystem.Action il2cppAction = new Il2CppSystem.Action(ptr);
+                    // 1. 建立託管的封裝 Action
+                    _buttonActionHolder = () => {
+                        try
+                        {
+                            onComplete?.Invoke();
+                        }
+                        finally
+                        {
+                            // 💡 當點擊執行完畢後，釋放全域引用，允許下一次 GC 清理，防止記憶體洩漏
+                            _pinnedIl2CppAction = null;
+                            _pinnedButtonArray = null;
+                            _buttonActionHolder = null;
+                        }
+                    };
 
-                        var buttonArray = new Il2CppReferenceArray<PopupBase.PopupButtonData>(1);
-                        buttonArray[0] = new PopupBase.PopupButtonData(
-                            "buttons.ok",
-                            PopupBase.PopupButtonData.States.Selected,
-                            il2cppAction,                   
-                            -1,
-                            true,
-                            null
-                        );
+                    // 2. 💡 正確且安全的 Il2Cpp 委派包裝方式（不需要手動 Marshal 指針）
+                    IntPtr ptr = Marshal.GetFunctionPointerForDelegate(_buttonActionHolder);
+                    _pinnedIl2CppAction = new Il2CppSystem.Action(ptr);
 
-                        BasicPopup iconPopup = PopupManager.GetIconPopup();
-                        iconPopup.sprite = UIManager.IconData.GetSprite("CapitalCapture");
-                        iconPopup.Header = title;
-                        iconPopup.Description = message;
-                        iconPopup.SetTribeInfoButtons(TextType.Description);
-						iconPopup.buttonData = buttonArray;
-                        iconPopup.Show();
+                    // 3. 💡 將陣列存在靜態變數中，防止被 GC 提前回收
+                    _pinnedButtonArray = new Il2CppReferenceArray<PopupBase.PopupButtonData>(1);
+                    _pinnedButtonArray[0] = new PopupBase.PopupButtonData(
+                        "buttons.ok",
+                        PopupBase.PopupButtonData.States.Selected,
+                        _pinnedIl2CppAction,                   
+                        -1,
+                        true,
+                        null
+                    );
+
+                    BasicPopup iconPopup = PopupManager.GetIconPopup();
+                    if (iconPopup == null) return;
+
+                    // 填寫基本資料
+                    iconPopup.sprite = UIManager.IconData.GetSprite("CapitalCapture");
+                    iconPopup.Header = title;
+                    iconPopup.Description = message;
+                    iconPopup.SetTribeInfoButtons(TextType.Description);
+
+                    // 4. 💡 傳入受記憶體保護（已釘死）的按鈕陣列
+                    iconPopup.buttonData = _pinnedButtonArray;
+                    
+                    iconPopup.Show();
                     }
                 }
             }
