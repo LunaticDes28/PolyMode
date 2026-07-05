@@ -87,7 +87,7 @@ namespace PolyMode
                 int num;
                 if (playerCount <= 4) num = 2;
                 else if (playerCount <= 8) num = 3;
-                else num = 4;
+                else num = 4;   // locked because max opponent is 7
 
                 int num2 = width / num;
                 if (num2 < 3)

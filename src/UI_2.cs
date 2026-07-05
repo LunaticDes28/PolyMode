@@ -21,7 +21,7 @@ namespace PolyMode
             {
                 if (!IsConquestSelected) return true;
 
-                if (label != null && (label == "12" || label == "13" || label == "14" || label == "15"))
+                if (int.TryParse(label, out int count) && count >= 8 && count <= 15)
                 {
                     Loader.modLogger?.LogInfo($"[Conquest-UI] Intercepted {label} opponents button.");
                     return false; // Block original addition
