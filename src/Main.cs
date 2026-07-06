@@ -1,12 +1,8 @@
 using HarmonyLib;
 using PolytopiaBackendBase.Game;
 using Polytopia.Data;
-using System;
-using System.Collections.Generic;
-using UnityEngine;
 using UnityEngine.EventSystems;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
-using System.Runtime.InteropServices;
 using System.Reflection;
 
 namespace PolyMode
@@ -65,12 +61,12 @@ namespace PolyMode
                 _calcProbMethod = AccessTools.Method(type, "CalculateProbabilityInRange");
                 _indexForProbMethod = AccessTools.Method(type, "IndexForProbabilityValueInRange");
 
-                Loader.modLogger?.LogInfo($"[Reflection] Methods resolved: " +
+                Loader.modLogger?.LogInfo($"[Reflection-Main] Methods resolved: " +
                     $"{_addDistanceMethod != null}, {_calcProbMethod != null}, {_indexForProbMethod != null}");
             }
             catch (Exception ex)
             {
-                Loader.modLogger?.LogError($"[Reflection] Failed to bind methods: {ex.Message}");
+                Loader.modLogger?.LogError($"[Reflection-Main] Failed to bind methods: {ex.Message}");
             }
         }
 
@@ -712,11 +708,6 @@ namespace PolyMode
             }
         }
 
-        private static Il2CppSystem.Action _pinnedIl2CppAction;
-        private static Il2CppReferenceArray<PopupBase.PopupButtonData> _pinnedButtonArray;
-
-        private static System.Action? _buttonActionHolder;
-
         private static void ExecutePopupLogic(
             CaptureCityReaction __instance,
             Action onComplete,
@@ -770,7 +761,7 @@ namespace PolyMode
                         ? $"Your capital has fallen to {linkedTribeNameWithSpace}. All your trade connections are lost forever." 
                         : $"Your city is wiped out from existence.";
 
-                    // if (!isPreviousOwnerCapital) {
+                    if (!isPreviousOwnerCapital) {
 
                         NotificationBase ntf = NotificationManager.GetBasicNotification();
                         ntf.header.text = title;
@@ -778,34 +769,20 @@ namespace PolyMode
                         ntf.showTime = 3;       
                         ntf.Show();       
 
-                    // } else {
+                    } else {
 
-                    /*_buttonActionHolder = () => {
+                    System.Action managedAction = () =>
+                    {
                         try
                         {
+                            Loader.modLogger?.LogInfo("[Conquest-Popup] OK Button clicked.");
                             onComplete?.Invoke();
                         }
-                        finally
+                        catch (Exception ex)
                         {
-                            _pinnedIl2CppAction = null;
-                            _pinnedButtonArray = null;
-                            _buttonActionHolder = null;
+                            Loader.modLogger?.LogError($"[Conquest-Popup] Callback error: {ex}");
                         }
                     };
-
-                    IntPtr ptr = Marshal.GetFunctionPointerForDelegate(_buttonActionHolder);
-                    _pinnedIl2CppAction = new Il2CppSystem.Action(ptr);
-
-                    // 3. 💡 將陣列存在靜態變數中，防止被 GC 提前回收
-                    _pinnedButtonArray = new Il2CppReferenceArray<PopupBase.PopupButtonData>(1);
-                    _pinnedButtonArray[0] = new PopupBase.PopupButtonData(
-                        "buttons.ok",
-                        PopupBase.PopupButtonData.States.Selected,
-                        _pinnedIl2CppAction,                   
-                        -1,
-                        true,
-                        null
-                    );
 
                     BasicPopup iconPopup = PopupManager.GetIconPopup();
                     if (iconPopup == null) return;
@@ -815,10 +792,17 @@ namespace PolyMode
                     iconPopup.Description = message;
                     iconPopup.SetTribeInfoButtons(TextType.Description);
 
-                    iconPopup.buttonData = _pinnedButtonArray;
-                    
+                    iconPopup.buttonData = new PopupBase.PopupButtonData[]{
+                        new PopupBase.PopupButtonData(
+                            "buttons.exit", 
+                            PopupBase.PopupButtonData.States.None, 
+                            onComplete, 
+                            -1, 
+                            true, 
+                            null),
+                    };
                     iconPopup.Show();
-                    }*/
+                    }
                 }
             }
             catch (Exception ex)

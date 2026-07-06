@@ -4,6 +4,7 @@ using UnityEngine;
 using System;
 using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
+using System.Reflection;
 
 namespace PolyMode
 {
@@ -102,20 +103,20 @@ namespace PolyMode
             {
                 if (IsConquestSelected)
                 {
-                    if (mapSize <= 15) // Tiny (11) & Small (14)
+                    if (mapSize <= 17) // Tiny (11) & Small (14) & Normal (16)
                     {
                         __result = 3;
                         Loader.modLogger?.LogInfo($"[Conquest-Backend] MapSize {mapSize} (Tiny/Small) detected. Limit set to 3.");
                         return false; 
                     }
-                    if (mapSize <= 19) // Normal (16) & Large (18)
+                    if (mapSize <= 21) // Large (18) & Huge (20)
                     {
                         __result = 5;
                         Loader.modLogger?.LogInfo($"[Conquest-Backend] MapSize {mapSize} (Normal/Large) detected. Limit set to 5.");
                         return false;
                     }
 
-                    // Huge (20) & Massive (30) 
+                    // Massive (30) 
                     __result = 7;
                     Loader.modLogger?.LogInfo($"[Conquest-Backend] MapSize {mapSize} (Huge/Massive) detected. Limit set to 7.");
                     return false;
@@ -127,5 +128,25 @@ namespace PolyMode
             }
             return true;
         }
+
+        private static MethodInfo? _gameInfoMethod;
+        
+        static UI_2()
+        {
+            try
+            {
+                var type = typeof(GameStatsScreen);
+
+                _gameInfoMethod = AccessTools.Method(type, "PrepareGameInfo");
+                
+                Loader.modLogger?.LogInfo($"[Reflection-UI_2] Methods resolved: " +
+                    $"{_gameInfoMethod != null}");
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Reflection-UI_2] Failed to bind methods: {ex.Message}");
+            }
+        }       
+       
     }
 }
