@@ -10,62 +10,16 @@ namespace PolyMode
     public static class UI_2
     {
         public static bool IsConquestSelected = false;
-        
-        [HarmonyPrefix]
-        [HarmonyPatch(typeof(UIHorizontalListData), nameof(UIHorizontalListData.AddItem))]
-        public static bool AddItem_Prefix(UIHorizontalListData __instance, string label, int id)
-        {
-            // 💡 1. 移除不安全的指標判斷（防範 Access Violation），僅保留安全的受管 null 檢查
-            if (__instance == null) return true;
-
-            try
-            {
-                GameSetupScreen_UI2? activeScreen = null;
-
-                var rawScreen = UnityEngine.Object.FindObjectOfType(Il2CppInterop.Runtime.Il2CppType.Of<GameSetupScreen_UI2>());
-                
-                if (rawScreen != null)
-                {
-                    activeScreen = rawScreen.TryCast<GameSetupScreen_UI2>();
-                }
-
-                if (activeScreen != null && activeScreen.gameModeData != null)
-                {
-                    int registeredConquestId = PolyMod.Registry.gameModesAutoidx - 1;
-                    
-                    if (activeScreen.gameModeData.selectedObject != registeredConquestId) 
-                    {
-                        return true;
-                    }
-                }
-                else
-                {
-                    return true; 
-                }
-
-                if (int.TryParse(label, out int count) && count >= 8 && count <= 15)
-                {
-                    Loader.modLogger?.LogInfo($"[Conquest-UI] [Auto-Detected] Intercepted {label} opponents button.");
-                    return false;
-                }
-
-                return true;
-            }
-            catch (Exception ex)
-            {
-                Loader.modLogger?.LogError($"[Conquest-UI] AddItem Prefix error: {ex}");
-                return true;
-            }
-        }
 
         [HarmonyPostfix]
         [HarmonyPatch(typeof(UIHorizontalListData), nameof(UIHorizontalListData.AddItem))]
         public static void AddItem_Postfix(UIHorizontalListData __instance, string label, int id)
         {
-            if (__instance == null || __instance.Pointer == IntPtr.Zero) return;
+            if (__instance == null) return;
 
             try
             {
+                
                 if (label != null && label.Equals("Infinity", StringComparison.OrdinalIgnoreCase))
                 {
                     var labels = __instance.labels;
@@ -81,7 +35,7 @@ namespace PolyMode
                     int registeredConquestId = PolyMod.Registry.gameModesAutoidx - 1;
                     __instance.AddItem("Conquest", registeredConquestId);
 
-                    Loader.modLogger?.LogInfo($"[Conquest-UI] Added 'Conquest' mode with ID {registeredConquestId}");
+                    Loader.modLogger?.LogInfo($"[Conquest-UI] Added 'Conquest' mode to {__instance} with ID {registeredConquestId}");
                 }
             }
             catch (Exception ex)
@@ -94,7 +48,8 @@ namespace PolyMode
         [HarmonyPatch(typeof(GameSetupScreen_UI2), nameof(GameSetupScreen_UI2.OnGameModeChanged))]
         public static void OnGameModeChanged_Postfix(GameSetupScreen_UI2 __instance, int index)
         {
-            if (__instance?.gameModeData?.labels == null) return;
+            if (__instance == null || __instance.view == null) return;
+            if (__instance.gameModeData == null || __instance.gameModeData.labels == null) return;
 
             try
             {
@@ -105,18 +60,72 @@ namespace PolyMode
                 if (selectedText.Equals("Conquest", StringComparison.OrdinalIgnoreCase))
                 {
                     IsConquestSelected = true;
-                    Loader.modLogger?.LogInfo("[Conquest-UI] Conquest mode selected.");
+                    Loader.modLogger?.LogInfo("[Conquest-UI] Conquest mode selected (TRUE).");
                 }
                 else
                 {
                     IsConquestSelected = false;
-                    Loader.modLogger?.LogInfo($"[Conquest-UI] Mode changed to: {selectedText}");
+                    Loader.modLogger?.LogInfo($"[Conquest-UI] Mode changed to: {selectedText} (FALSE).");
                 }
+                    
+                int allowedMaxOpponents = MapDataExtensions.GetMaximumOpponentCountForMapSize(
+                    GameManager.PreliminaryGameSettings.MapSize, 
+                    GameManager.PreliminaryGameSettings.mapPreset
+                );
+
+                if (allowedMaxOpponents <= 0 || allowedMaxOpponents > 15)
+                {
+                    allowedMaxOpponents = GameManager.GetMaxOpponents(); 
+                }
+
+                Loader.modLogger?.LogInfo($"[Conquest-UI] Active UI reconstruction triggered. Calculated max opponents: {allowedMaxOpponents}");
+
+                var uiLabels = new Il2CppSystem.Collections.Generic.List<string>();
+                for (int i = 0; i <= allowedMaxOpponents; i++)
+                {
+                    uiLabels.Add(i.ToString());
+                }
+
+                __instance.view.SetShowOpponents("Opponents", uiLabels, allowedMaxOpponents + 1, 3);
             }
             catch (Exception ex)
             {
                 Loader.modLogger?.LogWarning($"[Conquest-UI] OnGameModeChanged error: {ex.Message}");
             }
+        }         
+        
+        [HarmonyPrefix]
+        [HarmonyPatch(typeof(MapDataExtensions), "GetMaximumOpponentCountForMapSize")]
+        public static bool GetMaximumOpponentCount_Prefix(int mapSize, MapPreset mapPreset, ref int __result)
+        {
+            try
+            {
+                if (IsConquestSelected)
+                {
+                    if (mapSize <= 15) // Tiny (11) & Small (14)
+                    {
+                        __result = 3;
+                        Loader.modLogger?.LogInfo($"[Conquest-Backend] MapSize {mapSize} (Tiny/Small) detected. Limit set to 3.");
+                        return false; 
+                    }
+                    if (mapSize <= 19) // Normal (16) & Large (18)
+                    {
+                        __result = 5;
+                        Loader.modLogger?.LogInfo($"[Conquest-Backend] MapSize {mapSize} (Normal/Large) detected. Limit set to 5.");
+                        return false;
+                    }
+
+                    // Huge (20) & Massive (30) 
+                    __result = 7;
+                    Loader.modLogger?.LogInfo($"[Conquest-Backend] MapSize {mapSize} (Huge/Massive) detected. Limit set to 7.");
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest-Backend] MapDataExtensions error: {ex}");
+            }
+            return true;
         }
     }
 }

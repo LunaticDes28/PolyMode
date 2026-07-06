@@ -365,7 +365,7 @@ namespace PolyMode
             List<TileData> neutralVillages, HashSet<WorldCoordinates> assignedCoordinates, PlayerState player)
         {
             WorldCoordinates capitalCoords = player.startTile;
-            TileData closestVillage = null;
+            TileData? closestVillage = null;
             int closestDistance = int.MaxValue;
 
             foreach (var village in neutralVillages)
@@ -474,7 +474,7 @@ namespace PolyMode
                 if ((int)gameState.Settings.RulesGameMode != registeredConquestId) return true;
 
                 TileData cityTile = gameState.Map.GetTile(__instance.Coordinates);
-                PlayerState attacker = null;
+                PlayerState? attacker = null;
                 gameState.TryGetPlayer(__instance.PlayerId, out attacker);
 
                 if (cityTile != null && attacker != null)
@@ -512,7 +512,7 @@ namespace PolyMode
             // 2. Transfer population to nearest unsieged city
             if (transferredPopulation > 0 && originalOwner != null)
             {
-                TileData fleeCityTile = null;
+                TileData? fleeCityTile = null;
                 int closestDistance = int.MaxValue;
 
                 for (int i = 0; i < gameState.Map.Tiles.Length; i++)
@@ -770,7 +770,7 @@ namespace PolyMode
                         ? $"Your capital has fallen to {linkedTribeNameWithSpace}. All your trade connections are lost forever." 
                         : $"Your city is wiped out from existence.";
 
-                    if (!isPreviousOwnerCapital) {
+                    // if (!isPreviousOwnerCapital) {
 
                         NotificationBase ntf = NotificationManager.GetBasicNotification();
                         ntf.header.text = title;
@@ -778,24 +778,21 @@ namespace PolyMode
                         ntf.showTime = 3;       
                         ntf.Show();       
 
-                    } else {
+                    // } else {
 
-                    // 1. 建立託管的封裝 Action
-                    _buttonActionHolder = () => {
+                    /*_buttonActionHolder = () => {
                         try
                         {
                             onComplete?.Invoke();
                         }
                         finally
                         {
-                            // 💡 當點擊執行完畢後，釋放全域引用，允許下一次 GC 清理，防止記憶體洩漏
                             _pinnedIl2CppAction = null;
                             _pinnedButtonArray = null;
                             _buttonActionHolder = null;
                         }
                     };
 
-                    // 2. 💡 正確且安全的 Il2Cpp 委派包裝方式（不需要手動 Marshal 指針）
                     IntPtr ptr = Marshal.GetFunctionPointerForDelegate(_buttonActionHolder);
                     _pinnedIl2CppAction = new Il2CppSystem.Action(ptr);
 
@@ -813,17 +810,15 @@ namespace PolyMode
                     BasicPopup iconPopup = PopupManager.GetIconPopup();
                     if (iconPopup == null) return;
 
-                    // 填寫基本資料
                     iconPopup.sprite = UIManager.IconData.GetSprite("CapitalCapture");
                     iconPopup.Header = title;
                     iconPopup.Description = message;
                     iconPopup.SetTribeInfoButtons(TextType.Description);
 
-                    // 4. 💡 傳入受記憶體保護（已釘死）的按鈕陣列
                     iconPopup.buttonData = _pinnedButtonArray;
                     
                     iconPopup.Show();
-                    }
+                    }*/
                 }
             }
             catch (Exception ex)
