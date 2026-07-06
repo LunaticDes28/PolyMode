@@ -657,9 +657,12 @@ namespace PolyMode
         // =========================================================================
         // G. Reactions
         // =========================================================================
+        // 【核心關鍵】在類別最上方（方法外面）宣告這個靜態持有者，強行把回呼鎖在記憶體中，防止玩家點擊前被回收
+        private static Il2CppSystem.Action? _activePopupCallbackHolder;
+
         [HarmonyPrefix]
         [HarmonyPatch(typeof(CaptureCityReaction), nameof(CaptureCityReaction.Execute))]
-        public static bool CaptureCityReaction_Execute_Prefix(CaptureCityReaction __instance, Action onComplete)
+        public static bool CaptureCityReaction_Execute_Prefix(CaptureCityReaction __instance, Il2CppSystem.Action onComplete)
         {
             try
             {
@@ -672,16 +675,19 @@ namespace PolyMode
                 TileData tile = GameManager.GameState.Map.GetTile(__instance.action.Coordinates);
                 PlayerState playerState;
                 GameManager.GameState.TryGetPlayer(__instance.action.PlayerId, out playerState);
-		        PlayerState prevOwnerState;
-		        bool hasPreviousOwner = GameManager.GameState.TryGetPlayer(__instance.action.OldOwnerId, out prevOwnerState);
-		        bool isPreviousOwnerCapital = hasPreviousOwner && tile.capitalOf == __instance.action.OldOwnerId;
-		        bool flag = isPreviousOwnerCapital && GameManager.IsPlayerViewing(__instance.action.OldOwnerId) && !GameManager.Client.IsSpectating;
-		        Tile instance = tile.GetInstance();
+                PlayerState prevOwnerState;
+                bool hasPreviousOwner = GameManager.GameState.TryGetPlayer(__instance.action.OldOwnerId, out prevOwnerState);
+                bool isPreviousOwnerCapital = hasPreviousOwner && tile.capitalOf == __instance.action.OldOwnerId;
+                bool flag = isPreviousOwnerCapital && GameManager.IsPlayerViewing(__instance.action.OldOwnerId) && !GameManager.Client.IsSpectating;
+                Tile instance = tile.GetInstance();
                 int attackerId = __instance.action.PlayerId;
 
                 CameraController.Instance.CenterOnPosition(tile.coordinates.ToPosition(), 0.8f, null, false);
 
-                ExecutePopupLogic(__instance, onComplete, tile, playerState, prevOwnerState, isPreviousOwnerCapital, instance, attackerId);
+                // Temp Pointer Holder
+                _activePopupCallbackHolder = onComplete;
+
+                ExecutePopupLogic(__instance, _activePopupCallbackHolder, tile, playerState, prevOwnerState, isPreviousOwnerCapital, instance, attackerId);
 
                 instance?.StopFire();
                 if (tile.unit != null)
@@ -693,8 +699,11 @@ namespace PolyMode
                     }
                 }
                 if (!GameManager.Client.IsReplay)
+                {
                     InputEvents.SelectionCleared();
                     ResourceManager.IncomeChanged(__instance.action.PlayerId);
+                }
+                
                 if (!flag)
                 {
                     GameManager.DelayCall(2500, onComplete);
@@ -710,7 +719,7 @@ namespace PolyMode
 
         private static void ExecutePopupLogic(
             CaptureCityReaction __instance,
-            Action onComplete,
+            Il2CppSystem.Action onComplete,
             TileData tile,
             PlayerState playerState,
             PlayerState prevOwnerState,
@@ -739,69 +748,62 @@ namespace PolyMode
                 {
                     // Attacker - No button
                     string linkedTribeNameWithSpace = prevOwnerState.GetLinkedTribeNameWithSpace(GameManager.GameState);
-					
+                    
                     string title = isPreviousOwnerCapital ? "Good News!" : "City Conquered!";
                     string message = isPreviousOwnerCapital 
                         ? $"You have captured the {linkedTribeNameWithSpace} capital! All their trade connections are destroyed forever." 
                         : $"The city is now a ruin on the ground.";
 
-                        NotificationBase ntf = NotificationManager.GetBasicNotification();
-                        ntf.header.text = title;
-                        ntf.description.text = message;
-                        ntf.showTime = 3;       
-                        ntf.Show(); 
+                    NotificationBase ntf = NotificationManager.GetBasicNotification();
+                    ntf.header.text = title;
+                    ntf.description.text = message;
+                    ntf.showTime = 3;       
+                    ntf.Show(); 
                 }
                 else if (GameManager.IsPlayerViewing(__instance.action.OldOwnerId) && !GameManager.Client.IsSpectating)
                 {
                     // Defender - With button
                     string linkedTribeNameWithSpace = playerState.GetLinkedTribeNameWithSpace(GameManager.GameState);
-						
+                    
                     string title = isPreviousOwnerCapital ? "Bad News!" : "City Conquered!";
                     string message = isPreviousOwnerCapital 
                         ? $"Your capital has fallen to {linkedTribeNameWithSpace}. All your trade connections are lost forever." 
                         : $"Your city is wiped out from existence.";
 
-                    if (!isPreviousOwnerCapital) {
-
+                    if (!isPreviousOwnerCapital) 
+                    {
                         NotificationBase ntf = NotificationManager.GetBasicNotification();
                         ntf.header.text = title;
                         ntf.description.text = message;
                         ntf.showTime = 3;       
                         ntf.Show();       
-
-                    } else {
-
-                    System.Action managedAction = () =>
+                    } 
+                    else 
                     {
-                        try
-                        {
-                            Loader.modLogger?.LogInfo("[Conquest-Popup] OK Button clicked.");
-                            onComplete?.Invoke();
-                        }
-                        catch (Exception ex)
-                        {
-                            Loader.modLogger?.LogError($"[Conquest-Popup] Callback error: {ex}");
-                        }
-                    };
+                        BasicPopup iconPopup = PopupManager.GetIconPopup();
+                        if (iconPopup == null) return;
 
-                    BasicPopup iconPopup = PopupManager.GetIconPopup();
-                    if (iconPopup == null) return;
+                        iconPopup.sprite = UIManager.IconData.GetSprite("CapitalCapture");
+                        iconPopup.Header = title;
+                        iconPopup.Description = message;
+                        iconPopup.SetTribeInfoButtons(TextType.Description);
 
-                    iconPopup.sprite = UIManager.IconData.GetSprite("CapitalCapture");
-                    iconPopup.Header = title;
-                    iconPopup.Description = message;
-                    iconPopup.SetTribeInfoButtons(TextType.Description);
-
-                    iconPopup.buttonData = new PopupBase.PopupButtonData[]{
-                        new PopupBase.PopupButtonData(
+                        // Boxing
+                        var buttonElement = new PopupBase.PopupButtonData(
                             "buttons.exit", 
                             PopupBase.PopupButtonData.States.None, 
-                            onComplete, 
+                            _activePopupCallbackHolder, 
                             -1, 
                             true, 
-                            null),
-                    };
-                    iconPopup.Show();
+                            null
+                        );
+
+                        iconPopup.buttonData = new Il2CppReferenceArray<PopupBase.PopupButtonData>(1)
+                        {
+                            [0] = buttonElement
+                        };
+
+                        iconPopup.Show();
                     }
                 }
             }
