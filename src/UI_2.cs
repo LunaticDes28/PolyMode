@@ -46,6 +46,27 @@ namespace PolyMode
         }
 
         [HarmonyPostfix]
+        [HarmonyPatch(typeof(GameSetupScreen_UI2), nameof(GameSetupScreen_UI2.OnShow))]
+        public static void OnShow_Postfix(GameSetupScreen_UI2 __instance)
+        {
+            try
+            {
+                int registeredConquestId = PolyMod.Registry.gameModesAutoidx - 1;
+                Loader.modLogger?.LogInfo($"OnShow memory selected Gamemode ID is {GameManager.PreliminaryGameSettings.RulesGameMode}");
+
+                if ((int)GameManager.PreliminaryGameSettings.RulesGameMode == registeredConquestId)
+                {
+                    CreateOpponentsList(__instance);
+                }
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogWarning($"[Conquest-UI] OnShow error: {ex.Message}");
+            }
+        }
+
+
+        [HarmonyPostfix]
         [HarmonyPatch(typeof(GameSetupScreen_UI2), nameof(GameSetupScreen_UI2.OnGameModeChanged))]
         public static void OnGameModeChanged_Postfix(GameSetupScreen_UI2 __instance, int index)
         {
@@ -69,6 +90,16 @@ namespace PolyMode
                     Loader.modLogger?.LogInfo($"[Conquest-UI] Mode changed to: {selectedText} (FALSE).");
                 }
                     
+                CreateOpponentsList(__instance);
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogWarning($"[Conquest-UI] OnGameModeChanged error: {ex.Message}");
+            }
+        }         
+        
+        private static void CreateOpponentsList(GameSetupScreen_UI2 instance)
+        {
                 int allowedMaxOpponents = MapDataExtensions.GetMaximumOpponentCountForMapSize(
                     GameManager.PreliminaryGameSettings.MapSize, 
                     GameManager.PreliminaryGameSettings.mapPreset
@@ -87,21 +118,19 @@ namespace PolyMode
                     uiLabels.Add(i.ToString());
                 }
 
-                __instance.view.SetShowOpponents("Opponents", uiLabels, allowedMaxOpponents + 1, 3);
-            }
-            catch (Exception ex)
-            {
-                Loader.modLogger?.LogWarning($"[Conquest-UI] OnGameModeChanged error: {ex.Message}");
-            }
-        }         
-        
+                instance.view.SetShowOpponents("Opponents", uiLabels, allowedMaxOpponents + 1);
+        }
+
+
         [HarmonyPrefix]
         [HarmonyPatch(typeof(MapDataExtensions), "GetMaximumOpponentCountForMapSize")]
         public static bool GetMaximumOpponentCount_Prefix(int mapSize, MapPreset mapPreset, ref int __result)
         {
             try
             {
-                if (IsConquestSelected)
+                int registeredConquestId = PolyMod.Registry.gameModesAutoidx - 1;
+
+                if ((int)GameManager.PreliminaryGameSettings.RulesGameMode == registeredConquestId)
                 {
                     if (mapSize <= 17) // Tiny (11) & Small (14) & Normal (16)
                     {

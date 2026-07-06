@@ -780,13 +780,13 @@ namespace PolyMode
                     } 
                     else 
                     {
-                        BasicPopup iconPopup = PopupManager.GetIconPopup();
-                        if (iconPopup == null) return;
+                        BasicPopup Popup = PopupManager.GetBasicPopup();
+                        if (Popup == null) return;
 
-                        iconPopup.sprite = UIManager.IconData.GetSprite("CapitalCapture");
-                        iconPopup.Header = title;
-                        iconPopup.Description = message;
-                        iconPopup.SetTribeInfoButtons(TextType.Description);
+                        Popup.sprite = UIManager.IconData.GetSprite("CapitalCapture");
+                        Popup.Header = title;
+                        Popup.Description = message;
+                        Popup.SetTribeInfoButtons(TextType.Description);
 
                         // Boxing
                         var buttonElement = new PopupBase.PopupButtonData(
@@ -798,12 +798,12 @@ namespace PolyMode
                             null
                         );
 
-                        iconPopup.buttonData = new Il2CppReferenceArray<PopupBase.PopupButtonData>(1)
+                        Popup.buttonData = new Il2CppReferenceArray<PopupBase.PopupButtonData>(1)
                         {
                             [0] = buttonElement
                         };
 
-                        iconPopup.Show();
+                        Popup.Show();
                     }
                 }
             }
