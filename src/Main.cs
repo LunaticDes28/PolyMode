@@ -785,23 +785,28 @@ namespace PolyMode
 
                         Popup.sprite = UIManager.IconData.GetSprite("CapitalCapture");
                         Popup.Header = title;
+                        Loader.modLogger?.LogInfo($"Header is {Popup.Header}");
                         Popup.Description = message;
+                        Loader.modLogger?.LogInfo($"Description is {Popup.Description}");
                         Popup.SetTribeInfoButtons(TextType.Description);
-
+                        Loader.modLogger?.LogInfo($"SetTribeInfoButtons");
+                        
                         // Boxing
                         var buttonElement = new PopupBase.PopupButtonData(
-                            "buttons.exit", 
-                            PopupBase.PopupButtonData.States.None, 
+                            "buttons.ok", 
+                            PopupBase.PopupButtonData.States.Selected, 
                             _activePopupCallbackHolder, 
                             -1, 
                             true, 
                             null
                         );
+                        Loader.modLogger?.LogInfo($"ButtonElement - {buttonElement}");
 
                         Popup.buttonData = new Il2CppReferenceArray<PopupBase.PopupButtonData>(1)
                         {
                             [0] = buttonElement
                         };
+                        Loader.modLogger?.LogInfo($"ButtonData is {Popup.buttonData}");
 
                         Popup.Show();
                     }

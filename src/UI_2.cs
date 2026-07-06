@@ -46,27 +46,6 @@ namespace PolyMode
         }
 
         [HarmonyPostfix]
-        [HarmonyPatch(typeof(GameSetupScreen_UI2), nameof(GameSetupScreen_UI2.OnShow))]
-        public static void OnShow_Postfix(GameSetupScreen_UI2 __instance)
-        {
-            try
-            {
-                int registeredConquestId = PolyMod.Registry.gameModesAutoidx - 1;
-                Loader.modLogger?.LogInfo($"OnShow memory selected Gamemode ID is {GameManager.PreliminaryGameSettings.RulesGameMode}");
-
-                if ((int)GameManager.PreliminaryGameSettings.RulesGameMode == registeredConquestId)
-                {
-                    CreateOpponentsList(__instance);
-                }
-            }
-            catch (Exception ex)
-            {
-                Loader.modLogger?.LogWarning($"[Conquest-UI] OnShow error: {ex.Message}");
-            }
-        }
-
-
-        [HarmonyPostfix]
         [HarmonyPatch(typeof(GameSetupScreen_UI2), nameof(GameSetupScreen_UI2.OnGameModeChanged))]
         public static void OnGameModeChanged_Postfix(GameSetupScreen_UI2 __instance, int index)
         {
@@ -96,7 +75,27 @@ namespace PolyMode
             {
                 Loader.modLogger?.LogWarning($"[Conquest-UI] OnGameModeChanged error: {ex.Message}");
             }
-        }         
+        }        
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(GameSetupScreen_UI2), nameof(GameSetupScreen_UI2.OnShow))]
+        public static void OnShow_Postfix(GameSetupScreen_UI2 __instance)
+        {
+            try
+            {
+                int registeredConquestId = PolyMod.Registry.gameModesAutoidx - 1;
+                Loader.modLogger?.LogInfo($"OnShow memory selected Gamemode ID is {GameManager.PreliminaryGameSettings.RulesGameMode}");
+
+                if ((int)GameManager.PreliminaryGameSettings.RulesGameMode == registeredConquestId)
+                {
+                    CreateOpponentsList(__instance);
+                }
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogWarning($"[Conquest-UI] OnShow error: {ex.Message}");
+            }
+        } 
         
         private static void CreateOpponentsList(GameSetupScreen_UI2 instance)
         {
@@ -123,7 +122,7 @@ namespace PolyMode
 
 
         [HarmonyPrefix]
-        [HarmonyPatch(typeof(MapDataExtensions), "GetMaximumOpponentCountForMapSize")]
+        [HarmonyPatch(typeof(MapDataExtensions), nameof(MapDataExtensions.GetMaximumOpponentCountForMapSize))]
         public static bool GetMaximumOpponentCount_Prefix(int mapSize, MapPreset mapPreset, ref int __result)
         {
             try
@@ -176,6 +175,23 @@ namespace PolyMode
                 Loader.modLogger?.LogError($"[Reflection-UI_2] Failed to bind methods: {ex.Message}");
             }
         }       
-       
+        
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(GameModeButtonWrapper), nameof(GameModeButtonWrapper.SetData))]
+        public static void SetData_Postfix(GameModeButtonWrapper __instance, GameMode summaryGameMode, GameType gameType, int scoreLimit = 10000)
+        {
+            __instance.currentGameMode = summaryGameMode;
+            __instance.currentGameType = gameType;
+            __instance.currentGameRules = new GameRules(__instance.currentGameMode);
+            __instance.currentGameRules.ScoreLimit = scoreLimit;
+
+            int registeredConquestId = PolyMod.Registry.gameModesAutoidx - 1;
+            Sprite? ConquestIcon = PolyMod.Registry.GetSprite("conquest");
+
+            if ((int)summaryGameMode == registeredConquestId) {
+                __instance.roundButton.text = "Conquest";
+                __instance.roundButton.sprite = ConquestIcon;
+            }
+        }
     }
 }
