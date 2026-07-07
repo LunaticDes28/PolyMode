@@ -211,18 +211,22 @@ namespace PolyMode
         [HarmonyPatch(typeof(GameModeButtonWrapper), nameof(GameModeButtonWrapper.SetData))]
         public static void SetData_Postfix(GameModeButtonWrapper __instance, GameMode summaryGameMode, GameType gameType, int scoreLimit = 10000)
         {
+            if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                && GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+            {
+                return;
+            }
+
             __instance.currentGameMode = summaryGameMode;
             __instance.currentGameType = gameType;
             __instance.currentGameRules = new GameRules(__instance.currentGameMode);
             __instance.currentGameRules.ScoreLimit = scoreLimit;
 
-            int registeredConquestId = PolyMod.Registry.gameModesAutoidx - 1;
-            Sprite? ConquestIcon = PolyMod.Registry.GetSprite("conquest");
+            string modeName = summaryGameMode.GetName();
+            __instance.roundButton.text = char.ToUpper(modeName[0]) + modeName.Substring(1);
 
-            if ((int)summaryGameMode == registeredConquestId) {
-                __instance.roundButton.text = summaryGameMode.GetName();
-                __instance.roundButton.sprite = ConquestIcon;
-            }
+            Sprite? ConquestIcon = PolyMod.Registry.GetSprite("conquest");
+            __instance.roundButton.sprite = ConquestIcon;
         }
     }
 }

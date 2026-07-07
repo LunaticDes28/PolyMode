@@ -831,11 +831,12 @@ namespace PolyMode
                 if (GameManager.IsPlayerViewing((byte)attackerId) && !GameManager.Client.IsSpectating)
                 {
                     // Attacker - No button
-                    string TribeName = prevOwnerState.tribe.GetName();;
+                    string tribeName = prevOwnerState.tribe.GetName();;
+                    string capitalized = char.ToUpper(tribeName[0]) + tribeName.Substring(1);
                     
                     string title = isPreviousOwnerCapital ? "Good News!" : "City Conquered!";
                     string message = isPreviousOwnerCapital 
-                        ? $"You have captured the {TribeName} capital! All their trade connections are destroyed forever." 
+                        ? $"You have captured the {capitalized} capital! All their trade connections are destroyed forever." 
                         : $"The city is now a ruin on the ground.";
                     int time = isPreviousOwnerCapital ? 5 : 3;
                     
