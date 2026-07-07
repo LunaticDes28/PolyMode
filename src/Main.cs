@@ -287,7 +287,7 @@ namespace PolyMode
                     for (int p = 0; p < playerCount; p++)
                     {
                         PlayerState player = gameState.PlayerStates[p];
-                        AssignClosestVillage(neutralVillages, assignedCoordinates, player);
+                        AssignClosestVillage(gameState, neutralVillages, assignedCoordinates, player);
                     }
                 }
 
@@ -369,7 +369,7 @@ namespace PolyMode
                 for (int p = 0; p < playerCount; p++)
                 {
                     PlayerState player = gameState.PlayerStates[p];
-                    TileData closestVillage = AssignClosestVillage(neutralVillages, assignedCoordinates, player);
+                    TileData closestVillage = AssignClosestVillage(gameState, neutralVillages, assignedCoordinates, player);
 
                     if (closestVillage != null)
                     {
@@ -382,7 +382,7 @@ namespace PolyMode
         }
 
         private static TileData AssignClosestVillage(
-            List<TileData> neutralVillages, HashSet<WorldCoordinates> assignedCoordinates, PlayerState player)
+            GameState gameState, List<TileData> neutralVillages, HashSet<WorldCoordinates> assignedCoordinates, PlayerState player)
         {
             WorldCoordinates capitalCoords = player.startTile;
             TileData? closestVillage = null;
@@ -403,9 +403,10 @@ namespace PolyMode
             if (closestVillage != null)
             {
                 assignedCoordinates.Add(closestVillage.coordinates);
+                return closestVillage;
             }
 
-            return closestVillage;
+            return gameState.Map.GetTile(WorldCoordinates.NULL_COORDINATES);
         }
 
         private static void ConquestInitializeCity(GameState state, TileData tile, PlayerState player)
