@@ -25,6 +25,7 @@ namespace PolyMode
             Harmony.CreateAndPatchAll(typeof(UI_2));
 
             RegisterCustomGameMode("conquest");
+            RegisterCustomGameMode("reign");
 
             PolyMod.Loader.AddPatchDataType("gameType", typeof(GameType));
             PolyMod.Loader.AddPatchDataType("gameMode", typeof(GameMode));

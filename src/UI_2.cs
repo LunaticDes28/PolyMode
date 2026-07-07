@@ -11,6 +11,7 @@ namespace PolyMode
     public static class UI_2
     {
         public static bool IsConquestSelected = false;
+        public static bool IsReignSelected = false;
 
         [HarmonyPostfix]
         [HarmonyPatch(typeof(UIHorizontalListData), nameof(UIHorizontalListData.AddItem))]
@@ -20,23 +21,43 @@ namespace PolyMode
 
             try
             {
-                
-                if (label != null && label.Equals("Infinity", StringComparison.OrdinalIgnoreCase))
-                {
-                    var labels = __instance.labels;
-                    if (labels == null) return;
-
-                    // Check if Conquest already exists
-                    for (int i = 0; i < labels.Count; i++)
+                if (GameManager.PreliminaryGameSettings.GameType == GameType.SinglePlayer) {
+                    if (label != null && label.Equals("Infinity", StringComparison.OrdinalIgnoreCase))
                     {
-                        if (labels[i] != null && labels[i].Equals("Conquest", StringComparison.OrdinalIgnoreCase))
-                            return;
+                        var labels = __instance.labels;
+                        if (labels == null) return;
+
+                        for (int i = 0; i < labels.Count; i++)
+                        {
+                            if (labels[i] != null && labels[i].Equals("Conquest", StringComparison.OrdinalIgnoreCase))
+                                return;
+                        }
+
+                        int Id = (int)EnumCache<GameMode>.GetType("conquest");
+                        __instance.AddItem("Conquest", Id);
+
+                        Loader.modLogger?.LogInfo($"[Conquest-UI] Added 'Conquest' mode to {__instance} in SinglePlay  with ID {Id}");
                     }
+                } else 
+                    if (GameManager.PreliminaryGameSettings.GameType == GameType.PassAndPlay) {
+                    {
+                        if (label != null && label.Equals("Might", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var labels = __instance.labels;
+                            if (labels == null) return;
 
-                    int registeredConquestId = PolyMod.Registry.gameModesAutoidx - 1;
-                    __instance.AddItem("Conquest", registeredConquestId);
+                            for (int i = 0; i < labels.Count; i++)
+                            {
+                                if (labels[i] != null && labels[i].Equals("Reign", StringComparison.OrdinalIgnoreCase))
+                                    return;
+                            }
 
-                    Loader.modLogger?.LogInfo($"[Conquest-UI] Added 'Conquest' mode to {__instance} with ID {registeredConquestId}");
+                            int Id = (int)EnumCache<GameMode>.GetType("reign");
+                            __instance.AddItem("Reign", Id);
+
+                            Loader.modLogger?.LogInfo($"[Conquest-UI] Added 'Reign' mode to {__instance} in PassnPlay with ID {Id}");
+                        }
+                    }
                 }
             }
             catch (Exception ex)
@@ -61,11 +82,20 @@ namespace PolyMode
                 if (selectedText.Equals("Conquest", StringComparison.OrdinalIgnoreCase))
                 {
                     IsConquestSelected = true;
+                    IsReignSelected = false;
                     Loader.modLogger?.LogInfo("[Conquest-UI] Conquest mode selected (TRUE).");
+                }
+                else
+                if (selectedText.Equals("Reign", StringComparison.OrdinalIgnoreCase))
+                {
+                    IsConquestSelected = false;
+                    IsReignSelected = true;
+                    Loader.modLogger?.LogInfo($"[Conquest-UI] Reign mode selected (True).");
                 }
                 else
                 {
                     IsConquestSelected = false;
+                    IsReignSelected = false;
                     Loader.modLogger?.LogInfo($"[Conquest-UI] Mode changed to: {selectedText} (FALSE).");
                 }
                     
@@ -83,13 +113,12 @@ namespace PolyMode
         {
             try
             {
-                int registeredConquestId = PolyMod.Registry.gameModesAutoidx - 1;
                 Loader.modLogger?.LogInfo($"OnShow memory selected Gamemode ID is {GameManager.PreliminaryGameSettings.RulesGameMode}");
 
-                if ((int)GameManager.PreliminaryGameSettings.RulesGameMode == registeredConquestId)
-                {
-                    CreateOpponentsList(__instance);
-                }
+                if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")) return;
+                
+                CreateOpponentsList(__instance);
+                
             }
             catch (Exception ex)
             {
@@ -127,28 +156,30 @@ namespace PolyMode
         {
             try
             {
-                int registeredConquestId = PolyMod.Registry.gameModesAutoidx - 1;
-
-                if ((int)GameManager.PreliminaryGameSettings.RulesGameMode == registeredConquestId)
+                if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                    && GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
                 {
-                    if (mapSize <= 17) // Tiny (11) & Small (14) & Normal (16)
-                    {
-                        __result = 3;
-                        Loader.modLogger?.LogInfo($"[Conquest-Backend] MapSize {mapSize} (Tiny/Small) detected. Limit set to 3.");
-                        return false; 
-                    }
-                    if (mapSize <= 21) // Large (18) & Huge (20)
-                    {
-                        __result = 5;
-                        Loader.modLogger?.LogInfo($"[Conquest-Backend] MapSize {mapSize} (Normal/Large) detected. Limit set to 5.");
-                        return false;
-                    }
+                    return true;
+                }
 
-                    // Massive (30) 
-                    __result = 7;
-                    Loader.modLogger?.LogInfo($"[Conquest-Backend] MapSize {mapSize} (Huge/Massive) detected. Limit set to 7.");
+                if (mapSize <= 17) // Tiny (11) & Small (14) & Normal (16)
+                {
+                    __result = 3;
+                    Loader.modLogger?.LogInfo($"[Conquest-Backend] MapSize {mapSize} (Tiny/Small) detected. Limit set to {__result}.");
+                    return false; 
+                }
+                if (mapSize <= 21) // Large (18) & Huge (20)
+                {
+                    __result = 5;
+                    Loader.modLogger?.LogInfo($"[Conquest-Backend] MapSize {mapSize} (Normal/Large) detected. Limit set to {__result}.");
                     return false;
                 }
+
+                // Massive (30) 
+                __result = 7;
+                Loader.modLogger?.LogInfo($"[Conquest-Backend] MapSize {mapSize} (Huge/Massive) detected. Limit set to {__result}.");
+                return false;
+
             }
             catch (Exception ex)
             {
@@ -189,7 +220,7 @@ namespace PolyMode
             Sprite? ConquestIcon = PolyMod.Registry.GetSprite("conquest");
 
             if ((int)summaryGameMode == registeredConquestId) {
-                __instance.roundButton.text = "Conquest";
+                __instance.roundButton.text = summaryGameMode.GetName();
                 __instance.roundButton.sprite = ConquestIcon;
             }
         }

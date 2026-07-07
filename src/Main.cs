@@ -22,21 +22,31 @@ namespace PolyMode
             try
             {
                 bool isConquest = UI_2.IsConquestSelected;
-                if (!isConquest) return;
+                bool isReign = UI_2.IsReignSelected;
+                if (!isConquest && !isReign) return;
 
                 Loader.modLogger?.LogInfo("[Conquest-Map] Conquest Mode selected!");
 
-                int registeredConquestId = PolyMod.Registry.gameModesAutoidx - 1;
-                
                 // Pseudo GameSettings in GameState
-                gameState.Settings.RulesGameMode = (GameMode)registeredConquestId;
-                gameState.Settings.rules.WinByExtermination = true;
-                
-                Loader.modLogger?.LogInfo($"[Conquest-Map] RulesGameMode stamped as ID: {registeredConquestId}");
+                if (isConquest) {
+                    gameState.Settings.RulesGameMode = EnumCache<GameMode>.GetType("conquest");
+                    gameState.Settings.rules.WinByExtermination = true;
+                    
+                    Loader.modLogger?.LogInfo($"[Conquest-Map] RulesGameMode stamped as ID: {(int)gameState.Settings.RulesGameMode}");
 
-                UI_2.IsConquestSelected = false;
-                Loader.modLogger?.LogInfo($"[Conquest-Map] Flag IsConquestSelected is set {UI_2.IsConquestSelected}");
+                    UI_2.IsConquestSelected = false;
+                    Loader.modLogger?.LogInfo($"[Conquest-Map] Flag IsConquestSelected is set {UI_2.IsConquestSelected}");               
+                } 
+                else if (isReign)
+                {
+                    gameState.Settings.RulesGameMode = EnumCache<GameMode>.GetType("reign");
+                    gameState.Settings.rules.WinByCapital = true;
+                    
+                    Loader.modLogger?.LogInfo($"[Conquest-Map] RulesGameMode stamped as ID: {(int)gameState.Settings.RulesGameMode}");
 
+                    UI_2.IsReignSelected = false;
+                    Loader.modLogger?.LogInfo($"[Conquest-Map] Flag IsReignSelected is set {UI_2.IsReignSelected}");
+                }
             }
             catch (Exception ex)
             {
@@ -84,6 +94,12 @@ namespace PolyMode
         {
             try
             {
+                if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                    && GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                {
+                    return true;
+                }
+
                 Loader.modLogger?.LogInfo($"[CapitalGenerator] Clustered City Mod started. Players={playerCount}, Width={width}");
 
                 int num = (playerCount <= 4) ? 2 : 4;
@@ -195,8 +211,12 @@ namespace PolyMode
         {
             try
             {
-                int registeredConquestId = PolyMod.Registry.gameModesAutoidx - 1;
-                if ((int)gameState.Settings.RulesGameMode != registeredConquestId) return;
+
+                if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                    && GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                {
+                    return;
+                }
 
                 Loader.modLogger?.LogInfo($"[Conquest-Map] ConquestVillageGeneration...");
                 ConquestVillageGeneration(__instance, gameState);
@@ -309,8 +329,11 @@ namespace PolyMode
             if (gameState?.Settings == null) return;
             try
             {
-                int registeredConquestId = PolyMod.Registry.gameModesAutoidx - 1;
-                if ((int)gameState.Settings.RulesGameMode != registeredConquestId) return;
+                if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                    && GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                {
+                    return;
+                }
 
                 Loader.modLogger?.LogInfo("[Conquest-Match] Executing village initialization in StartMatchAction...");
                 ConquestVillageDistribution(gameState);
@@ -447,8 +470,11 @@ namespace PolyMode
             if (state == null || techData == null) return;
             try
             {
-                int registeredConquestId = PolyMod.Registry.gameModesAutoidx - 1;
-                if ((int)state.Settings.RulesGameMode != registeredConquestId) return;
+                if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                    && GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                {
+                    return;
+                };
 
                 int addition = (int)(playerState.cities + state.CurrentTurn);
                 addition = Math.Min(addition, 5 + techData.cost * playerState.cities);
@@ -467,8 +493,11 @@ namespace PolyMode
             if (gameState?.Settings == null) return true;
             try
             {
-                int registeredConquestId = PolyMod.Registry.gameModesAutoidx - 1;
-                if ((int)gameState.Settings.RulesGameMode != registeredConquestId) return true;
+                if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                    && GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                {
+                    return true;
+                };
 
                 TileData cityTile = gameState.Map.GetTile(__instance.Coordinates);
                 PlayerState? attacker = null;
@@ -606,7 +635,16 @@ namespace PolyMode
             cityTile.owner = 0;
             // cityTile.capitalOf = 0;  // leave mark of capital
 
-            // 6. Wipe player if necessary
+            // 6. Wipe all other cities if pass/multi
+            if (attacker != null && originalOwner != null && cityTile.capitalOf != 0) {
+                Il2CppSystem.Collections.Generic.List<TileData> cityList = originalOwner.GetCityTiles(gameState);
+                foreach (TileData targetTile in cityList) {
+                    // gameState.ActionStack.Add(new CaptureCityAction(attacker.Id, targetTile.coordinates, originalOwner.Id));
+                    DestroyCityConquest(gameState, targetTile, attacker);
+                }
+            }
+
+            // 7. Wipe player if necessary
             if (originalOwner != null && attacker != null && !originalOwner.IsAlive(gameState, gameState.Settings.rules.PlayerDeathCondition))
             {
                 originalOwner.wipedAtCommandIndex = gameState.CommandStack.Count - 1;
@@ -617,8 +655,52 @@ namespace PolyMode
         }
 
         // =========================================================================
-        // F. AI interpretation
+        // F. Win Conditions & AI interpretation
         // =========================================================================
+        [HarmonyPrefix]
+        [HarmonyPatch(typeof(GameState), nameof(GameState.TryGetWinner))]
+        private static bool TryGetWinnerDefault_Prefix(GameState __instance, out PlayerState winner)
+        {
+            Il2CppSystem.Collections.Generic.List<PlayerState> playersSortedByRank = __instance.GetPlayersSortedByRank();
+		    winner = playersSortedByRank[0];
+		    int num = GameStateUtils.CountRealAlivePlayers(__instance, null);
+		    try
+            {
+                // Codes below already handles path of all situations
+                /*if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                {
+                    return true;
+                }*/
+
+                if (__instance.Settings.RulesGameMode == EnumCache<GameMode>.GetType("reign"))
+                {
+                    return num <=1 && winner.CountCapitals(__instance) == 1;
+                }
+                if (num <= 1 && ((int)__instance.Settings.GameType == 4 || (int)__instance.Settings.GameType == 1))
+                {
+                    return true;
+                }
+                if (num == 0)
+                {
+                    return true;
+                }
+                if (__instance.Settings.rules.WinByExtermination && GameStateUtils.CountAlivePlayers(__instance) == 1)
+                {
+                    return true;
+                }
+                if (__instance.Settings.rules.TurnLimit > 0)
+                {
+                    return __instance.CurrentTurn >= (ulong)__instance.Settings.rules.TurnLimit;
+                }
+                return (__instance.Settings.rules.WinByCapital && winner.CountCapitals(__instance) == __instance.PlayerCount) || (__instance.Settings.rules.ScoreLimit > 0 && winner.score >= (ulong)__instance.Settings.rules.ScoreLimit);
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest-AI] Error in TryGetWinnerDefault detour: {ex.Message}");
+                return true; 
+            }
+        }
+
         [HarmonyPrefix]
         [HarmonyPatch(typeof(AI), nameof(AI.GetGameProgress))]
         private static bool GetGameProgress_Prefix(ref float __result, GameState gameState, PlayerState winningPlayer)
@@ -627,32 +709,32 @@ namespace PolyMode
 
             try
             {
-                int registeredConquestId = PolyMod.Registry.gameModesAutoidx - 1;
-
-                if ((int)gameState.Settings.RulesGameMode == registeredConquestId)
+                if (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                    && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
                 {
-                    if (winningPlayer == null)
-                    {
-                        __result = 0f;
-                        return false;
-                    }
-
-                    float totalCities = Math.Max(0.1f, (float)MapDataExtensions.CountCities(gameState));
-                    float cityProgress = (float)winningPlayer.cities / totalCities;
-                    
-                    __result = Math.Min(1f, Math.Max(0f, cityProgress));
-                    
-                    return false; 
+                    return true;
                 }
+                
+                if (winningPlayer == null)
+                {
+                    __result = 0f;
+                    return false;
+                }
+
+                float totalCities = Math.Max(0.1f, (float)MapDataExtensions.CountCities(gameState));
+                float cityProgress = (float)winningPlayer.cities / totalCities;
+                
+                __result = Math.Min(1f, Math.Max(0f, cityProgress));
+                
+                return false; 
+
             }
             catch (Exception ex)
             {
                 Loader.modLogger?.LogError($"[Conquest-AI] Error in GetGameProgress detour: {ex.Message}");
                 __result = 0f; 
-                return false; 
+                return false;   // DON'T allow vanilla code run because custom gamemode cause crash
             }
-
-            return true; 
         }
 
         // =========================================================================
@@ -668,9 +750,11 @@ namespace PolyMode
             {
                 Loader.modLogger?.LogInfo("[Conquest-Popup] Prefix started.");
 
-                int registeredConquestId = PolyMod.Registry.gameModesAutoidx - 1;
-                if ((int)GameManager.GameState.Settings.RulesGameMode != registeredConquestId) 
+                if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                    && GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                {
                     return true;
+                }
 
                 TileData tile = GameManager.GameState.Map.GetTile(__instance.action.Coordinates);
                 PlayerState playerState;
