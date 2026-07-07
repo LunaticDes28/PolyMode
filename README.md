@@ -1,5 +1,5 @@
-﻿# Polytopia Map Maker
-![](https://img.shields.io/github/downloads/johnklipi/PolytopiaConquest/total)
+﻿# Polytopia Extension PolyMode
+![](https://img.shields.io/github/downloads/LunaticDes28/PolyMode/total)
 ## Requirements
 
 - Polymod
@@ -10,6 +10,6 @@
 
 Download PolyMod Installer from https://polymod.dev/ and install PolyMod.
 
-Download one of our releases https://github.com/johnklipi/PolytopiaConquest/releases/latest, and then put it to the `Mods` folder in **the Polytopia root folder**.
+Download one of our releases https://github.com/LunaticDes28/PolyMode/releases/latest, and then put it to the `Mods` folder in **the Polytopia root folder**.
 
 Enjoy!
