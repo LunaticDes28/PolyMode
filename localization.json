@@ -1,27 +1,8 @@
 {
-    "gamemode_conquest_caps": {
-        "English": "Conquest"
-    },
-    "gamemode_conquest_description_button": {
-        "English": "Conquer your enemy and demolish their cities."
-    },
     "gamemode_conquest": {
         "English": "Conquest"
     },
-    "gamesettings_generationtype":
-    {
-        "English": "Generation Type"
-    },
-    "gamesettings_mapwidth":
-    {
-        "English": "Map Width (max is {0})"
-    },
-    "gamesettings_size_custom":
-    {
-        "English": "Custom"
-    },
-    "gamesettings_map_custom":
-    {
-        "English": "Custom"
+    "gamemode_reign": {
+        "English": "Reign"
     }
 }

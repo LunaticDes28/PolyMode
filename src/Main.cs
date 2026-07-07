@@ -28,7 +28,8 @@ namespace PolyMode
                 Loader.modLogger?.LogInfo("[Conquest-Map] Conquest Mode selected!");
 
                 // Pseudo GameSettings in GameState
-                if (isConquest) {
+                if (isConquest) 
+                {
                     gameState.Settings.RulesGameMode = EnumCache<GameMode>.GetType("conquest");
                     gameState.Settings.rules.WinByExtermination = true;
                     
@@ -56,33 +57,6 @@ namespace PolyMode
 
         // =========================================================================
         // B. Capital Generation Logics
-        // =========================================================================
-
-        private static MethodInfo? _addDistanceMethod;
-        private static MethodInfo? _calcProbMethod;
-        private static MethodInfo? _indexForProbMethod;
-
-        static Main()
-        {
-            try
-            {
-                var type = typeof(MapGenerator);
-
-                _addDistanceMethod = AccessTools.Method(type, "AddDistanceToProbabilityTable");
-                _calcProbMethod = AccessTools.Method(type, "CalculateProbabilityInRange");
-                _indexForProbMethod = AccessTools.Method(type, "IndexForProbabilityValueInRange");
-
-                Loader.modLogger?.LogInfo($"[Reflection-Main] Methods resolved: " +
-                    $"{_addDistanceMethod != null}, {_calcProbMethod != null}, {_indexForProbMethod != null}");
-            }
-            catch (Exception ex)
-            {
-                Loader.modLogger?.LogError($"[Reflection-Main] Failed to bind methods: {ex.Message}");
-            }
-        }
-
-        // =========================================================================
-        // 主前置補丁
         // =========================================================================
         [HarmonyPrefix]
         [HarmonyPatch(typeof(MapGenerator), nameof(MapGenerator.GeneratePlayerCapitalPositions))]
@@ -150,7 +124,7 @@ namespace PolyMode
                         int num6 = k * num2 + num4;
                         int num7 = j * num2 + num5;
 
-                        _addDistanceMethod?.Invoke(__instance, new object[] { probabilities, width, new WorldCoordinates(num6 - 1, num7 - 1), num2 });
+                        __instance.AddDistanceToProbabilityTable(probabilities, width, new WorldCoordinates(num6 - 1, num7 - 1), num2);
                     }
                 }
 
@@ -176,11 +150,9 @@ namespace PolyMode
                     int endX = Math.Min(width - num12, num10 + num2 - num13);
                     int startY = Math.Max(num12, num11 + num13);
                     int endY = Math.Min(width - num12, num11 + num2 - num13);
-
-                    int max = (int)(_calcProbMethod?.Invoke(__instance, new object[] { probabilities, width, startX, endX, startY, endY }) ?? 0);
+                    int max = __instance.CalculateProbabilityInRange(probabilities, width, startX, endX, startY, endY);
                     int value = __instance.random.Range(0, max);
-
-                    int num14 = (int)(_indexForProbMethod?.Invoke(__instance, new object[] { probabilities, width, value, startX, endX, startY, endY }) ?? 0);
+                    int num14 = __instance.IndexForProbabilityValueInRange(probabilities, width, value, startX, endX, startY, endY);
 
                     Loader.modLogger?.LogInfo($"[CapitalGenerator] Capital placed at {WorldCoordinates.FromIndex(num14, width)} for player {l}");
 
@@ -193,7 +165,7 @@ namespace PolyMode
                     __result.Add(index);
                 }
 
-                return false; // 成功接管
+                return false;
             }
             catch (Exception ex)
             {
@@ -637,7 +609,7 @@ namespace PolyMode
             // cityTile.capitalOf = 0;  // leave mark of capital
 
             // 6. Wipe all other cities if pass/multi
-            if (attacker != null && originalOwner != null && cityTile.capitalOf != 0) {
+            if (attacker != null && originalOwner != null && cityTile.capitalOf != 0 && GameManager.PreliminaryGameSettings.RulesGameMode == EnumCache<GameMode>.GetType("reign")) {
                 Il2CppSystem.Collections.Generic.List<TileData> cityList = originalOwner.GetCityTiles(gameState);
                 foreach (TileData targetTile in cityList) {
                     // gameState.ActionStack.Add(new CaptureCityAction(attacker.Id, targetTile.coordinates, originalOwner.Id));
@@ -658,47 +630,45 @@ namespace PolyMode
         // =========================================================================
         // F. Win Conditions & AI interpretation
         // =========================================================================
-        [HarmonyPrefix]
+        [HarmonyPostfix]
         [HarmonyPatch(typeof(GameState), nameof(GameState.TryGetWinner))]
-        private static bool TryGetWinnerDefault_Prefix(GameState __instance, out PlayerState winner)
+        private static void TryGetWinnerDefault_Postfix(GameState __instance, ref bool __result, ref PlayerState winner)
         {
-            Il2CppSystem.Collections.Generic.List<PlayerState> playersSortedByRank = __instance.GetPlayersSortedByRank();
-		    winner = playersSortedByRank[0];
-		    int num = GameStateUtils.CountRealAlivePlayers(__instance, null);
-		    try
+            if (__result) return;
+
+            if (__instance == null || __instance.Settings == null) return;
+
+            try
             {
-                // Codes below already handles path of all situations
-                /*if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
-                {
-                    return true;
-                }*/
+                var playersSortedByRank = __instance.GetPlayersSortedByRank();
+                if (playersSortedByRank == null || playersSortedByRank.Count == 0) return;
+
+                PlayerState topWinner = playersSortedByRank[0];
+                if (topWinner == null) return;
 
                 if (__instance.Settings.RulesGameMode == EnumCache<GameMode>.GetType("reign"))
                 {
-                    return num <=1 && winner.CountCapitals(__instance) == 1;
+                    int num = GameStateUtils.CountAlivePlayers(__instance); 
+
+                    if (num <= 1 && topWinner.CountCapitals(__instance) == 1)
+                    {
+                        winner = topWinner;
+                        __result = true;
+                        return;
+                    }
                 }
-                if (num <= 1 && ((int)__instance.Settings.GameType == 4 || (int)__instance.Settings.GameType == 1))
+
+                /*if (__instance.Settings.rules.ScoreLimit > 0 && topWinner.score >= (ulong)__instance.Settings.rules.ScoreLimit)
                 {
-                    return true;
+                    winner = topWinner;
+                    __result = true;
+                    return;
                 }
-                if (num == 0)
-                {
-                    return true;
-                }
-                if (__instance.Settings.rules.WinByExtermination && GameStateUtils.CountAlivePlayers(__instance) == 1)
-                {
-                    return true;
-                }
-                if (__instance.Settings.rules.TurnLimit > 0)
-                {
-                    return __instance.CurrentTurn >= (ulong)__instance.Settings.rules.TurnLimit;
-                }
-                return (__instance.Settings.rules.WinByCapital && winner.CountCapitals(__instance) == __instance.PlayerCount) || (__instance.Settings.rules.ScoreLimit > 0 && winner.score >= (ulong)__instance.Settings.rules.ScoreLimit);
+                */
             }
             catch (Exception ex)
             {
-                Loader.modLogger?.LogError($"[Conquest-AI] Error in TryGetWinnerDefault detour: {ex.Message}");
-                return true; 
+                Loader.modLogger?.LogError($"[Conquest-AI] Error in TryGetWinner Postfix: {ex}");
             }
         }
 
@@ -771,7 +741,6 @@ namespace PolyMode
 
                 // Temp Pointer Holder
                 _activePopupCallbackHolder = onComplete;
-
                 ExecutePopupLogic(__instance, _activePopupCallbackHolder, tile, playerState, prevOwnerState, isPreviousOwnerCapital, instance, attackerId);
 
                 instance?.StopFire();
@@ -788,7 +757,6 @@ namespace PolyMode
                     InputEvents.SelectionCleared();
                     ResourceManager.IncomeChanged(__instance.action.PlayerId);
                 }
-                
                 if (!flag)
                 {
                     GameManager.DelayCall(2500, onComplete);
@@ -835,9 +803,9 @@ namespace PolyMode
                     string tribeName = prevOwnerState.tribe.GetName();;
                     string capitalized = char.ToUpper(tribeName[0]) + tribeName.Substring(1);
                     
-                    string title = isPreviousOwnerCapital ? "Good News!" : "City Conquered!";
+                    string title = isPreviousOwnerCapital ? "Good News!" : "City Razed!";
                     string message = isPreviousOwnerCapital 
-                        ? $"You have captured the {capitalized} capital! All their trade connections are destroyed forever." 
+                        ? $"You have razed the {capitalized} capital! All their trade connections are destroyed forever." 
                         : $"The city is now a ruin on the ground.";
                     int time = isPreviousOwnerCapital ? 5 : 3;
                     
@@ -852,7 +820,7 @@ namespace PolyMode
                     // Defender - With button
                     string linkedTribeNameWithSpace = playerState.GetLinkedTribeNameWithSpace(GameManager.GameState);
                     
-                    string title = isPreviousOwnerCapital ? "Bad News!" : "City Conquered!";
+                    string title = isPreviousOwnerCapital ? "Bad News!" : "City Razed!";
                     string message = isPreviousOwnerCapital 
                         ? $"Your capital has fallen to {linkedTribeNameWithSpace}. All your trade connections are lost forever." 
                         : $"Your city is wiped out from existence.";
@@ -867,35 +835,19 @@ namespace PolyMode
                     } 
                     else 
                     {
-                        BasicPopup Popup = PopupManager.GetBasicPopup();
-                        if (Popup == null) return;
-
-                        Popup.sprite = UIManager.IconData.GetSprite("CapitalCapture");
-                        Popup.Header = title;
-                        Loader.modLogger?.LogInfo($"Header is {Popup.Header}");
-                        Popup.Description = message;
-                        Loader.modLogger?.LogInfo($"Description is {Popup.Description}");
-                        Popup.SetTribeInfoButtons(TextType.Description);
-                        Loader.modLogger?.LogInfo($"SetTribeInfoButtons");
-                        
-                        // Boxing
-                        var buttonElement = new PopupBase.PopupButtonData(
-                            "buttons.ok", 
-                            PopupBase.PopupButtonData.States.Selected, 
-                            _activePopupCallbackHolder, 
-                            -1, 
-                            true, 
-                            null
-                        );
-                        Loader.modLogger?.LogInfo($"ButtonElement - {buttonElement}");
-
-                        Popup.buttonData = new Il2CppReferenceArray<PopupBase.PopupButtonData>(1)
+                        BasicPopup basicPopup = PopupManager.GetBasicPopup();
+                        basicPopup.sprite = UIManager.IconData.GetSprite("CapitalCapture");
+                        basicPopup.Header = title;
+                        basicPopup.Description = message;
+                        basicPopup.SetTribeInfoButtons(TextType.Description);
+                        basicPopup.buttonData = new PopupBase.PopupButtonData[]
                         {
-                            [0] = buttonElement
+                            new PopupBase.PopupButtonData("buttons.ok", PopupBase.PopupButtonData.States.Selected, onComplete, -1, true, null)
                         };
-                        Loader.modLogger?.LogInfo($"ButtonData is {Popup.buttonData}");
+                        Loader.modLogger?.LogInfo($"ButtonData is {basicPopup.buttonData}");
 
-                        Popup.Show();
+                        basicPopup.Show(InputManager.GetInputPosition());
+                        Loader.modLogger?.LogInfo("[Conquest-Backend] ExecutePopupLogic finished!");
                     }
                 }
             }
