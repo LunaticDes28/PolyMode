@@ -4,6 +4,7 @@ using Polytopia.Data;
 using UnityEngine.EventSystems;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using System.Reflection;
+using PolytopiaBackendBase.Common;
 
 namespace PolyMode
 {
@@ -657,7 +658,6 @@ namespace PolyMode
         // =========================================================================
         // G. Reactions
         // =========================================================================
-        // 【核心關鍵】在類別最上方（方法外面）宣告這個靜態持有者，強行把回呼鎖在記憶體中，防止玩家點擊前被回收
         private static Il2CppSystem.Action? _activePopupCallbackHolder;
 
         [HarmonyPrefix]
@@ -747,17 +747,18 @@ namespace PolyMode
                 if (GameManager.IsPlayerViewing((byte)attackerId) && !GameManager.Client.IsSpectating)
                 {
                     // Attacker - No button
-                    string linkedTribeNameWithSpace = prevOwnerState.GetLinkedTribeNameWithSpace(GameManager.GameState);
+                    string TribeName = prevOwnerState.tribe.GetName();;
                     
                     string title = isPreviousOwnerCapital ? "Good News!" : "City Conquered!";
                     string message = isPreviousOwnerCapital 
-                        ? $"You have captured the {linkedTribeNameWithSpace} capital! All their trade connections are destroyed forever." 
+                        ? $"You have captured the {TribeName} capital! All their trade connections are destroyed forever." 
                         : $"The city is now a ruin on the ground.";
-
+                    int time = isPreviousOwnerCapital ? 5 : 3;
+                    
                     NotificationBase ntf = NotificationManager.GetBasicNotification();
                     ntf.header.text = title;
                     ntf.description.text = message;
-                    ntf.showTime = 3;       
+                    ntf.showTime = time;     
                     ntf.Show(); 
                 }
                 else if (GameManager.IsPlayerViewing(__instance.action.OldOwnerId) && !GameManager.Client.IsSpectating)
