@@ -105,6 +105,7 @@ StyleCopReport.xml
 *.sln
 *.dll
 *.txt
+*.gitignore
 
 # Chutzpah Test files
 _Chutzpah*
