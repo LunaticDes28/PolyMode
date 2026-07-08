@@ -103,7 +103,6 @@ StyleCopReport.xml
 *.scc
 *.csproj
 *.sln
-*.dll
 *.txt
 *.gitignore
 

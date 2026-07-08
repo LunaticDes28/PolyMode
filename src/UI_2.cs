@@ -1,7 +1,9 @@
+using BepInEx.Logging;
 using HarmonyLib;
 using PolytopiaBackendBase.Game;
 using UnityEngine;
 using System;
+using System.Runtime.InteropServices;
 using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using System.Reflection;
@@ -65,7 +67,7 @@ namespace PolyMode
                 Loader.modLogger?.LogError($"[Conquest-UI] AddItem Postfix error: {ex}");
             }
         }
-
+        
         [HarmonyPostfix]
         [HarmonyPatch(typeof(GameSetupScreen_UI2), nameof(GameSetupScreen_UI2.OnGameModeChanged))]
         public static void OnGameModeChanged_Postfix(GameSetupScreen_UI2 __instance, int index)
@@ -98,14 +100,16 @@ namespace PolyMode
                     IsReignSelected = false;
                     Loader.modLogger?.LogInfo($"[Conquest-UI] Mode changed to: {selectedText} (FALSE).");
                 }
-                    
+                //GameSetupScreen a = new GameSetupScreen();
+                //a.gameModeInfoRow = null;
+
                 CreateOpponentsList(__instance);
             }
             catch (Exception ex)
             {
                 Loader.modLogger?.LogWarning($"[Conquest-UI] OnGameModeChanged error: {ex.Message}");
             }
-        }        
+        }
 
         [HarmonyPostfix]
         [HarmonyPatch(typeof(GameSetupScreen_UI2), nameof(GameSetupScreen_UI2.OnShow))]
