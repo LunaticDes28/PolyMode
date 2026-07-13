@@ -1,13 +1,8 @@
-using BepInEx.Logging;
 using HarmonyLib;
 using PolytopiaBackendBase.Game;
 using UnityEngine;
-using System;
-using System.Runtime.InteropServices;
-using Il2CppInterop.Runtime;
-using Il2CppInterop.Runtime.InteropTypes.Arrays;
-using System.Reflection;
-using UnityEngine.UI;
+using UnityEngine.EventSystems;
+using Polytopia.Data;
 
 namespace PolyMode
 {
@@ -16,6 +11,9 @@ namespace PolyMode
         public static bool IsConquestSelected = false;
         public static bool IsReignSelected = false;
 
+        // =========================================================================
+        // A. Pre Game Menu
+        // =========================================================================
         [HarmonyPostfix]
         [HarmonyPatch(typeof(UIHorizontalListData), nameof(UIHorizontalListData.AddItem))]
         public static void AddItem_Postfix(UIHorizontalListData __instance, string label, int id)
@@ -166,13 +164,13 @@ namespace PolyMode
                     return true;
                 }
 
-                if (mapSize <= 17) // Tiny (11) & Small (14) & Normal (16)
+                if (mapSize <= 16) // Tiny (11) & Small (14) & Normal (16)
                 {
                     __result = 3;
                     Loader.modLogger?.LogInfo($"[Conquest-Backend] MapSize {mapSize} (Tiny/Small) detected. Limit set to {__result}.");
                     return false; 
                 }
-                if (mapSize <= 21) // Large (18) & Huge (20)
+                if (mapSize <= 20) // Large (18) & Huge (20)
                 {
                     __result = 5;
                     Loader.modLogger?.LogInfo($"[Conquest-Backend] MapSize {mapSize} (Normal/Large) detected. Limit set to {__result}.");
@@ -192,6 +190,9 @@ namespace PolyMode
             return true;
         } 
         
+        // =========================================================================
+        // B. Ingame Stats Screen
+        // =========================================================================
         [HarmonyPostfix]
         [HarmonyPatch(typeof(GameModeButtonWrapper), nameof(GameModeButtonWrapper.SetData))]
         public static void SetData_Postfix(GameModeButtonWrapper __instance, GameMode summaryGameMode, GameType gameType, int scoreLimit = 10000)
@@ -210,7 +211,7 @@ namespace PolyMode
                 __instance.currentGameRules.ScoreLimit = scoreLimit;
 
                 string modeName = summaryGameMode.GetName();
-                __instance.roundButton.text = char.ToUpper(modeName[0]) + modeName.Substring(1);
+                __instance.roundButton.text = LocalizationUtils.CapitalizeString(modeName);
 
                 Sprite? ConquestIcon = PolyMod.Registry.GetSprite("conquest");
                 __instance.roundButton.sprite = ConquestIcon;
@@ -234,7 +235,7 @@ namespace PolyMode
                 }
                 
                 string modeName = GameManager.PreliminaryGameSettings.RulesGameMode.GetName();
-                string HeaderText = char.ToUpper(modeName[0]) + modeName.Substring(1);
+                string HeaderText = LocalizationUtils.CapitalizeString(modeName);
 
               	BasicPopup basicPopup = PopupManager.GetBasicPopup();
                 basicPopup.Header = HeaderText;
@@ -265,5 +266,85 @@ namespace PolyMode
                 return true;
             }
         }
+
+        // =========================================================================
+        // C. Ingame Interaction Menu (Broken)
+        // =========================================================================
+
+        // public delegate void ClickButtonDelegate(int index, System.IntPtr eventDataPtr);
+
+        // private static readonly System.Collections.Generic.List<ClickButtonDelegate> _gcProtector = new();
+
+        /*[HarmonyPostfix]
+        [HarmonyPatch(typeof(InteractionBar), nameof(InteractionBar.AddImprovementButtons))]
+        public static void AddImprovementButtons_Postfix(InteractionBar __instance, Tile tile)
+        {
+            try
+            {
+                PlayerState player = GameManager.LocalPlayer;
+                if (player == null || player.AutoPlay) return;
+
+                if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                    && GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                {
+                    return;
+                }
+                
+                GameState gameState = GameManager.GameState;
+                GameLogicData gameLogicData = gameState.GameLogicData;
+                Il2CppSystem.Collections.Generic.List<CommandBase>.Enumerator enumerator = CommandUtils.GetBuildableImprovements(gameState, player, tile.Data, true).GetEnumerator();
+                {
+                    while (enumerator.MoveNext())
+                    {
+                        Loader.modLogger?.LogInfo($"[Conquest-Bar] {enumerator.Current.ToString()}");
+                        
+                        BuildCommand buildCommand = enumerator.Current.Cast<BuildCommand>();
+                        ImprovementData improvementData2;                    
+                        gameLogicData.TryGetData(buildCommand.Type, out improvementData2);
+                        if (improvementData2 == null) continue;
+                        Loader.modLogger?.LogInfo($"[Conquest-Bar] Imp data");
+
+                        if (improvementData2.type != EnumCache<ImprovementData.Type>.GetType("citadel"))
+                        {
+                            continue;
+                        }
+                        Loader.modLogger?.LogInfo($"[Conquest-Bar] Citadel button initialization");
+        
+                        UIRoundButton uiroundButton = __instance.CreateRoundBottomBarButton(Localization.Get("improvement.citadel"), false);
+                        if (uiroundButton == null) continue;
+                        
+                        Sprite? Icon = PolyMod.Registry.GetSprite("citadel");
+                        uiroundButton.sprite = Icon;
+                        uiroundButton.buttonActive = enumerator.Current.IsValid(gameState);
+                        uiroundButton.buttonExpensive = !uiroundButton.buttonActive;
+
+                        int num = Main.CountCityCitadel(gameState, tile.Data);
+                        uiroundButton.Cost = improvementData2.cost + num * 2;
+                        if (improvementData2.cost <= 0)
+                        {
+                            uiroundButton.Cost = -1f;
+                        }
+
+                        Loader.modLogger?.LogInfo($"[Conquest-Bar] {improvementData2.GetName()} {uiroundButton.Cost}");
+                        
+                        ClickButtonDelegate clickAction = (index, eventDataPtr) =>
+                        {
+                            PopupManager.HideCurrentPopup();
+                            __instance.ClickedImprovement(buildCommand);
+                        };
+
+                        _gcProtector.Add(clickAction);
+
+                        System.IntPtr nativeFuncPtr = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(clickAction);
+                        
+                        uiroundButton.OnClicked = new UIButtonBase.ButtonAction(nativeFuncPtr);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest-Bar] AddImprovementButtons error: {ex}");
+            }
+        }*/
     }
 }

@@ -1,10 +1,7 @@
 using HarmonyLib;
 using PolytopiaBackendBase.Game;
 using Polytopia.Data;
-using UnityEngine.EventSystems;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
-using System.Reflection;
-using PolytopiaBackendBase.Common;
 
 namespace PolyMode
 {
@@ -68,8 +65,8 @@ namespace PolyMode
         {
             try
             {
-                if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
-                    && GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                if (GameManager.GameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                    && GameManager.GameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
                 {
                     return true;
                 }
@@ -184,8 +181,8 @@ namespace PolyMode
             try
             {
 
-                if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
-                    && GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                if (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                    && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
                 {
                     return;
                 }
@@ -301,8 +298,8 @@ namespace PolyMode
             if (gameState?.Settings == null) return;
             try
             {
-                if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
-                    && GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                if (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                    && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
                 {
                     return;
                 }
@@ -434,7 +431,479 @@ namespace PolyMode
         }
 
         // =========================================================================
-        // E. Tech Cost & City Destruction Handler
+        // E. Citadel Logics
+        // =========================================================================
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(GameLogicData), nameof(GameLogicData.CanBuild))]
+        private static void GameLogicData_CanBuild(GameLogicData __instance, GameState gameState, TileData tile, PlayerState playerState, ImprovementData improvement, ref bool __result)
+        {
+            if (tile.improvement != null && improvement.type != ImprovementData.Type.Road) 
+            {
+                __result = false;
+                return;
+            }
+
+            try
+            {
+                if (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                    && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                {
+                    return;
+                }
+
+                if (improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel") && tile.owner == playerState.Id)
+                {
+                    int cityLimit = 0;
+                    int capitalLimit = 0;
+                    int citadel = CountCityCitadel(gameState, tile);
+                    TileData cityTile = GameManager.GameState.Map.GetTile(tile.rulingCityCoordinates);
+                    
+                    if (gameState.Settings.MapSize  <= 11)
+                    {
+                        cityLimit = 1;
+                        capitalLimit = 1;
+                    }
+                    else
+                    if (gameState.Settings.MapSize  <= 16)
+                    {
+                        cityLimit = 1;
+                        capitalLimit = 2;
+                    }
+                    else
+                    if (gameState.Settings.MapSize  <= 20)
+                    {
+                        cityLimit = 2;
+                        capitalLimit = 2;
+                    }
+                    else
+                    {
+                        cityLimit = 3;
+                        capitalLimit = 3;
+                    }
+
+                    if (cityTile.capitalOf != 0 && citadel >= capitalLimit)
+                    {
+                        __result = false;
+                        return;
+                    }
+                    if (cityTile.capitalOf == 0 && citadel >= cityLimit)
+                    {
+                        __result = false;
+                        return;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest] Error in CanBuild Postfix: {ex}");
+            }            
+        }   
+
+        /*[HarmonyPrefix]
+        [HarmonyPatch(typeof(BuildAction), nameof(BuildAction.ExecuteDefault))]
+        private static bool BuildAction__Prefix(BuildAction __instance, GameState gameState)
+        {
+            try
+            {
+                if (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                    && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                {
+                    return true;
+                }
+
+                TileData tile = gameState.Map.GetTile(__instance.Coordinates);
+                ImprovementData improvementData;
+                PlayerState playerState;
+				if (tile != null && gameState.GameLogicData.TryGetData(__instance.Type, out improvementData) && gameState.TryGetPlayer(__instance.PlayerId, out playerState))
+		        {
+
+                    if (improvementData.type != EnumCache<ImprovementData.Type>.GetType("citadel"))
+                    {
+                        return true;
+                    }
+
+                    int num = CountCityCitadel(gameState, tile);   
+                    ImprovementState improvementState = new ImprovementState
+                    {
+                        type = __instance.Type,
+                        borderSize = (ushort)improvementData.borderSize,
+                        level = 0,
+                        xp = 0,
+                        production = 1,
+                        founded = (ushort)gameState.CurrentTurn,
+                        baseScore = (ushort)improvementData.GetScoreReward(),
+                        founder = __instance.PlayerId
+                    };
+                    tile.improvement = improvementState;
+                    if (__instance.DeductCost)
+                    {
+                        playerState.Currency -= improvementData.GetCurrencyCost() + num * 2;
+                    }
+                }
+
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest] Error in BuildAction Prefix: {ex}");
+                return true;
+            }
+        }*/
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(BuildAction), nameof(BuildAction.ExecuteDefault))]
+        private static void BuildAction__Postfix(BuildAction __instance, GameState gameState)
+        {
+            try
+            {
+                if (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                    && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                {
+                    return;
+                }
+
+                TileData tile = gameState.Map.GetTile(__instance.Coordinates);
+                ImprovementData improvementData;
+                PlayerState playerState;
+				if (tile != null && gameState.GameLogicData.TryGetData(__instance.Type, out improvementData) && gameState.TryGetPlayer(__instance.PlayerId, out playerState))
+		        {
+
+                    if (improvementData.type != EnumCache<ImprovementData.Type>.GetType("citadel"))
+                    {
+                        return;
+                    }
+
+                    TileData cityTile = GameManager.GameState.Map.GetTile(tile.rulingCityCoordinates);
+                    int area = cityTile.improvement.borderSize;
+                    ActionUtils.ExploreFromTile(gameState, playerState, tile, area, false);
+                    
+                    TileData[] areaSorted = gameState.Map.GetAreaSorted(tile.coordinates, area, true, true);
+                    if (areaSorted != null && areaSorted.Length > 0)
+                    {
+                        foreach (TileData tileData in areaSorted)
+                        {
+                            if (tileData.owner == 0)
+                            {
+                                tileData.owner = __instance.PlayerId;
+                                tileData.rulingCityCoordinates = cityTile.coordinates;
+                                
+                                Tile instance = tileData.GetInstance();
+                                if (instance != null)
+                                {
+                                    instance.Render();
+                                }
+                            }
+                        }
+
+                        foreach (TileData tileData in areaSorted)
+                        {
+                            Tile instance = tileData.GetInstance();
+                            if (instance != null)
+                            {
+                                instance.Render();
+                            }
+                        }
+                        // ActionUtils.RuleArea(gameState, playerState, tile, false);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest] Error in BuildAction Prefix: {ex}");
+            }
+        }
+
+        [HarmonyPrefix]
+        [HarmonyPatch(typeof(DestroyImprovementAction), nameof(DestroyImprovementAction.ExecuteDefault))]
+        private static bool DestroyImprovementAction__Prefix(DestroyImprovementAction __instance, GameState state)
+        {
+            try
+            {
+                if (state.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                    && state.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                {
+                    return true;
+                }
+
+                TileData tile = state.Map.GetTile(__instance.Coordinates);
+            
+                if (tile.improvement.type != EnumCache<ImprovementData.Type>.GetType("citadel"))
+                {
+                    return true;
+                }
+
+                TileData cityTile = GameManager.GameState.Map.GetTile(tile.rulingCityCoordinates);
+                int area = cityTile.improvement.borderSize;
+                TileData[] areaSorted = state.Map.GetAreaSorted(tile.coordinates, area, true, true);
+                
+                if (areaSorted != null && areaSorted.Length > 0)
+                {
+                    foreach (TileData tileData in areaSorted)
+                    {
+                        if (tileData.owner == cityTile.owner && tileData.rulingCityCoordinates == cityTile.coordinates)
+                        {
+                            TileData[] areaSorted2 = state.Map.GetAreaSorted(tileData.coordinates, area, true, true);
+                            if (areaSorted2 == null) continue;
+
+                            bool isRule = false;
+
+                            foreach (TileData tileData2 in areaSorted2)
+                            {
+                                if (tileData2.improvement != null && (tileData2.improvement.type == ImprovementData.Type.City || tileData2.improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel"))
+                                    && tileData2.owner == cityTile.owner
+                                    && tileData2.rulingCityCoordinates == cityTile.coordinates
+                                    && tileData2.coordinates != tile.coordinates)
+                                {
+                                    Loader.modLogger?.LogInfo("[Conquest-Citadel] isRule");
+                                    isRule = true;
+                                    break;
+                                }
+                            }
+
+                            if (!isRule)
+                            {
+                                Loader.modLogger?.LogInfo("[Conquest-Citadel] Unrule");
+
+                                int num = ScoreSheet.tileValue;
+                                if (tileData.improvement != null)
+                                {
+                                    num += state.CalculateImprovementScore(tileData);
+                                }
+                                state.ActionStack.Add(new DecreaseScoreAction(tileData.owner, num));
+
+                                ImprovementData improvementData;
+                                if (tileData.improvement != null && state.GameLogicData.TryGetData(tileData.improvement.type, out improvementData))
+                                {
+                                    int num2 = improvementData.CalculateImprovementPopulationAtLevel(tileData.improvement.level);
+                                    for (int i = 0; i < num2; i++)
+                                    {
+                                        state.ActionStack.Add(new DecreasePopulationAction(tileData.owner, tileData.rulingCityCoordinates, 200));
+                                    }
+                                }
+
+                                tileData.owner = 0;
+                                tileData.rulingCityCoordinates = WorldCoordinates.NULL_COORDINATES; 
+                                tileData.improvement = null;
+                            }
+                        }
+                    }
+
+                    foreach (TileData tileData in areaSorted)
+                    {
+                        Tile instance = tileData.GetInstance();
+                        if (instance != null)
+                        {
+                            instance.Render();
+                        }
+                    }
+                }
+                
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest] Error in BuildAction Prefix: {ex}");
+                return true;
+            }
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(UnitDataExtensions), nameof(UnitDataExtensions.GetDefenceBonus))]
+        private static void GetDefenceBonus_Postfix(UnitState unit, GameState gameState, ref int __result)
+        {
+            TileData tile = gameState.Map.GetTile(unit.coordinates);
+            if (tile == null)
+            {
+                return;
+            }
+
+            if (tile != null && tile.improvement != null && tile.improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel") && tile.owner == unit.owner)
+            {
+                __result = 15;
+            }
+
+            if (tile != null && tile.improvement != null && tile.improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel") && tile.terrain == TerrainData.Type.Mountain && tile.unit.UnitData.attack < 4 && tile.owner == unit.owner)
+            {
+                __result = 40;
+            }
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(TrainCommand), nameof(TrainCommand.IsValid))]
+        private static void TrainCommand_IsValid(TrainCommand __instance, GameState state, ref bool __result, string validationError)
+        {
+            TileData tile = state.Map.GetTile(__instance.Coordinates);
+            if (tile.improvement != null && tile.improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel")
+                && tile.owner == __instance.PlayerId
+                && tile.unit == null)
+            {
+                UnitData unitData;
+                if (state.GameLogicData.TryGetData(__instance.Type, out unitData))
+                {
+                    if (unitData.cost != 8)
+                    {
+                        __result = true;
+                        return;                        
+                    }
+                }
+            }
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(CommandUtils), nameof(CommandUtils.GetTrainableUnits))]
+        private static void GetTrainableUnits_Postfix(GameState gameState, PlayerState player, TileData tile, ref Il2CppSystem.Collections.Generic.List<TrainCommand> __result, bool includeUnavailable = false)
+        {
+            Il2CppSystem.Collections.Generic.List<TrainCommand> list = new Il2CppSystem.Collections.Generic.List<TrainCommand>();
+            if (tile.improvement != null && tile.improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel"))
+                {
+                    if (tile.owner != player.Id)
+                    {
+                        return;
+                    }
+
+                    foreach (UnitData unitData in gameState.GameLogicData.GetUnlockedUnits(player, gameState, false))
+                    {
+                        if (CommandValidation.HasUnitTerrain(gameState, tile.coordinates, unitData) && unitData.cost != 8)
+                        {
+                            TrainCommand trainCommand = new TrainCommand(player.Id, unitData.type, tile.coordinates);
+                            if (!player.blockTrainUnits && (includeUnavailable || trainCommand.IsValid(gameState)))
+                            {
+                                list.Add(trainCommand);
+                            }
+                        }
+                    }
+                    __result = list;
+                    return;
+                }
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(ActionUtils), nameof(ActionUtils.TrainUnit))]
+        private static void TrainUnit_Postfix(GameState gameState, PlayerState playerState, TileData tile, UnitData unitData, UnitState __result)
+        {
+            try
+            {
+                // 1. 頂層安全防護：如果遊戲本體回傳的單位本身就是 null，或者地塊無效，直接退出
+                if (__result == null || tile == null) return;
+
+                // 2. 【關鍵修正】利用短路求值先防範空地 null，再安全比對是否為 citadel
+                if (tile.improvement != null && tile.improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel"))
+                {
+                    Loader.modLogger?.LogInfo("[Conquest-Train] Rewriting unit home at citadel");
+                    
+                    // 將部隊的家園（Home）重新綁定到該駐軍所隸屬的都市中心
+                    __result.home = tile.rulingCityCoordinates;
+                    
+                    Loader.modLogger?.LogInfo($"[Conquest-Train] Home successfully updated to: {__result.home.ToString()}");
+                }
+            }
+            catch (Exception ex)
+            {
+                // 3. 萬一出錯，捕獲它並印出日誌，但絕對不干擾遊戲本體獲取 __result 物件
+                Loader.modLogger?.LogError($"[Conquest-Train] Shielded error in TrainUnit Postfix: {ex.Message}");
+            }
+        }
+
+        [HarmonyPrefix]
+        [HarmonyPatch(typeof(ActionUtils), nameof(ActionUtils.GetCityAreaSorted))]
+        private static bool GetCityAreaSorted__Prefix(GameState gameState, TileData cityTile, ref Il2CppSystem.Collections.Generic.List<TileData> __result)
+        {
+            try
+            {
+                if (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                    && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                {
+                    return true;
+                }
+
+                PlayerState player;
+                if (gameState.TryGetPlayer(cityTile.owner, out player))
+                {
+                    WorldCoordinates centerCoords = (cityTile.rulingCityCoordinates == WorldCoordinates.NULL_COORDINATES) 
+                        ? cityTile.coordinates 
+                        : cityTile.rulingCityCoordinates;
+
+                    TileData cityCenter = GameManager.GameState.Map.GetTile(centerCoords);
+                    
+                    if (cityCenter == null) return true; 
+
+                    Il2CppSystem.Collections.Generic.List<TileData> list = new Il2CppSystem.Collections.Generic.List<TileData>();
+                    TileData[] areaSorted = gameState.Map.GetAreaSorted(cityCenter.coordinates, 8, true, true);
+                    
+                    if (areaSorted != null && areaSorted.Length > 0)
+                    {
+                        foreach (TileData tileData in areaSorted)
+                        {
+                            if (tileData.rulingCityCoordinates == cityCenter.coordinates || tileData.coordinates == cityCenter.coordinates)
+                            {
+                                list.Add(tileData);
+                            }
+                        }
+                    }
+
+                    __result = list; 
+                    return false;
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest] Error in GetCityAreaSorted Prefix: {ex}");
+                return true;
+            }
+        }
+
+        [HarmonyPrefix]
+        [HarmonyPatch(typeof(GameLogicData), nameof(GameLogicData.HasImprovementWithinCityBorders))]
+        private static bool HasImprovementWithinCityBorders__Prefix(MapData map, WorldCoordinates cityCoordinates, ImprovementData.Type improvementType, ref bool __result)
+        {
+            try
+            {
+                TileData cityTile = map.GetTile(cityCoordinates);
+                Il2CppSystem.Collections.Generic.List<TileData> cityArea = ActionUtils.GetCityAreaSorted(GameManager.GameState, cityTile);
+                for (int i = 0; i < cityArea.Count; i++)
+                {
+                    TileData tileData = cityArea[i];
+                    if (!(tileData.rulingCityCoordinates != cityCoordinates) && tileData.HasImprovement(improvementType))
+                    {
+                        __result = true;
+                        return false;
+                    }
+                }
+                __result = false;
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest] Error in HasImprovementWithinCityBorders Prefix: {ex}");
+                return true;
+            }
+        }
+
+        public static int CountCityCitadel(GameState gameState, TileData tile)
+        {
+            Il2CppSystem.Collections.Generic.List<TileData> cityArea = ActionUtils.GetCityAreaSorted(gameState, tile);
+            int count = 0;
+            if (cityArea != null)
+            {
+                foreach (TileData territoryTile in cityArea)
+                {
+                    if (territoryTile != null && territoryTile.improvement != null)
+                    {
+                        if (territoryTile.improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel"))
+                        {
+                            count++;
+                            // Loader.modLogger?.LogInfo($"Citadel count is {count} on tile {territoryTile.coordinates}");
+                        }
+                    }
+                }
+            }      
+            return count;
+        }
+
+        // =========================================================================
+        // F. Tech Cost & City Destruction Handler
         // =========================================================================
         [HarmonyPostfix]
         [HarmonyPatch(typeof(GameLogicData), nameof(GameLogicData.GetTechPrice))]
@@ -443,14 +912,14 @@ namespace PolyMode
             if (state == null || techData == null) return;
             try
             {
-                if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
-                    && GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                if (GameManager.GameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                    && GameManager.GameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
                 {
                     return;
                 };
 
                 int addition = (int)(playerState.cities + state.CurrentTurn);
-                addition = Math.Min(addition, 5 + techData.cost * playerState.cities);
+                addition = Math.Min(addition, 5 + techData.cost * playerState.cities * 3);
                 __result = (int)Math.Ceiling((double)(techData.cost + addition));
             }
             catch (Exception ex)
@@ -466,8 +935,8 @@ namespace PolyMode
             if (gameState?.Settings == null) return true;
             try
             {
-                if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
-                    && GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                if (GameManager.GameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                    && GameManager.GameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
                 {
                     return true;
                 };
@@ -477,7 +946,7 @@ namespace PolyMode
                 gameState.TryGetPlayer(__instance.PlayerId, out attacker);
 
                 if (cityTile != null && attacker != null)
-                    DestroyCityConquest(gameState, cityTile, attacker);
+                    DestroyCityConquest(gameState, cityTile, attacker, false);
 
                 return false;
             }
@@ -487,7 +956,7 @@ namespace PolyMode
             }
         }
 
-        private static void DestroyCityConquest(GameState gameState, TileData cityTile, PlayerState attacker)
+        public static void DestroyCityConquest(GameState gameState, TileData cityTile, PlayerState playerState, bool isCityUpgrade)
         {
             if (cityTile?.improvement?.type != ImprovementData.Type.City) return;
 
@@ -508,7 +977,7 @@ namespace PolyMode
                 }
             }
 
-            // 2. Transfer population to nearest unsieged city
+            // 2. Transfer population to nearest unsieged city (or capital)
             if (transferredPopulation > 0 && originalOwner != null)
             {
                 TileData? fleeCityTile = null;
@@ -538,28 +1007,49 @@ namespace PolyMode
                         }
                     }
                 }
-
-                if (fleeCityTile != null)
+                if (isCityUpgrade == false)
                 {
-                    fleeCityTile.improvement.AddPopulation((short)transferredPopulation);
-                    Loader.modLogger?.LogInfo($"[Conquest] Transferred {transferredPopulation} population from razed city to safe city at {fleeCityTile.coordinates}.");
+                    if (fleeCityTile != null)
+                    {
+                        fleeCityTile.improvement.AddPopulation((short)transferredPopulation);
+                        Loader.modLogger?.LogInfo($"[Conquest] Transferred {transferredPopulation} populations from razed city to safe city at {fleeCityTile.coordinates}.");
 
+                    }
+                    else
+                    {
+                        Loader.modLogger?.LogInfo($"[Conquest] No safe, un-sieged cities found for Player {originalOwnerId}. Population permanently lost.");
+                    }
                 }
                 else
                 {
-                    Loader.modLogger?.LogInfo($"[Conquest] No safe, un-sieged cities found for Player {originalOwnerId}. Population permanently lost.");
+                    TileData capital = GameManager.GameState.Map.GetTile(playerState.startTile);
+                    if (capital != null)
+                    {
+                        for (int j = 0; j < 2; j++)
+                        {
+                            gameState.ActionStack.Add(new IncreasePopulationAction(playerState.Id, cityTile.coordinates, capital.coordinates, 60));
+                            //instance.AddSubAction(new IncreasePopulationAction(playerState.Id, cityTile.coordinates, capital.coordinates, 60));
+                        }
+                        playerState.currency += 3;
+                        Loader.modLogger?.LogInfo($"[Conquest-Tech] Transferred 2 populations from abandoned city to capital at {capital.coordinates}.");
+
+                    }
+                    else
+                    {
+                        Loader.modLogger?.LogInfo($"[Conquest-Tech] Capital not owned by Player {originalOwnerId}. Population permanently lost.");
+                    }
                 }
             }
 
             // 3. Rewards & Scores increment for attacker
             int reward = Math.Min(15, cityTile.improvement.level * 2) + Math.Min(15, (int)gameState.CurrentTurn);
             int score  = 100 + cityTile.improvement.level * 50;
-            gameState.ActionStack.Add(new IncreaseScoreAction(attacker.Id, score, cityTile.coordinates, 50));
+            gameState.ActionStack.Add(new IncreaseScoreAction(playerState.Id, score, cityTile.coordinates, 50));
 
-            if (attacker != null)
+            if (playerState != null && !isCityUpgrade)
             {
-                attacker.Currency += reward;
-                Loader.modLogger?.LogInfo($"[Conquest] City destroyed by player {attacker.Id} (+{reward} stars & {score} scores)");
+                playerState.Currency += reward;
+                Loader.modLogger?.LogInfo($"[Conquest] City destroyed by player {playerState.Id} (+{reward} stars & {score} scores)");
             }
 
             // 4. Unrule city area & Score deduction for defender
@@ -569,6 +1059,7 @@ namespace PolyMode
                 for (int j = 0; j < cityArea.Count; j++)
                 {
                     TileData territoryTile = cityArea[j];
+                    // Loader.modLogger?.LogInfo($"[Conquest] Unrule action for {territoryTile.coordinates}");
                     if (territoryTile != null)
                     {
                         int num = ScoreSheet.tileValue;
@@ -586,9 +1077,20 @@ namespace PolyMode
                 }
             }
 
+            if (cityArea != null)
+            {
+                for (int i = cityArea.Count - 1; i >= 0; i--)
+                {
+                    Tile instance2 = cityArea[i].GetInstance();
+                    if (instance2 != null)
+                    {
+                        instance2.Render();
+                    }
+                }
+            }
+
             // 5. Generate ruins
-            bool leaveRuin = UnityEngine.Random.value <= 1f;
-            if (leaveRuin)
+            if (isCityUpgrade != true)
             {
                 cityTile.improvement = new ImprovementState
                 {
@@ -609,26 +1111,26 @@ namespace PolyMode
             // cityTile.capitalOf = 0;  // leave mark of capital
 
             // 6. Wipe all other cities if pass/multi
-            if (attacker != null && originalOwner != null && cityTile.capitalOf != 0 && GameManager.PreliminaryGameSettings.RulesGameMode == EnumCache<GameMode>.GetType("reign")) {
+            if (playerState != null && originalOwner != null && cityTile.capitalOf != 0 && gameState.Settings.RulesGameMode == EnumCache<GameMode>.GetType("reign")) {
                 Il2CppSystem.Collections.Generic.List<TileData> cityList = originalOwner.GetCityTiles(gameState);
                 foreach (TileData targetTile in cityList) {
                     // gameState.ActionStack.Add(new CaptureCityAction(attacker.Id, targetTile.coordinates, originalOwner.Id));
-                    DestroyCityConquest(gameState, targetTile, attacker);
+                    DestroyCityConquest(gameState, targetTile, playerState, false);
                 }
             }
 
             // 7. Wipe player if necessary
-            if (originalOwner != null && attacker != null && !originalOwner.IsAlive(gameState, gameState.Settings.rules.PlayerDeathCondition))
+            if (originalOwner != null && playerState != null && !originalOwner.IsAlive(gameState, gameState.Settings.rules.PlayerDeathCondition))
             {
                 originalOwner.wipedAtCommandIndex = gameState.CommandStack.Count - 1;
-                gameState.ActionStack.Add(new WipePlayerAction(attacker.Id, originalOwner.Id));
+                gameState.ActionStack.Add(new WipePlayerAction(playerState.Id, originalOwner.Id));
             }
             
             Loader.modLogger?.LogInfo($"[Conquest] City at {cityTile.coordinates} has been successfully razed.");
         }
 
         // =========================================================================
-        // F. Win Conditions & AI interpretation
+        // G. Win Conditions & AI interpretation
         // =========================================================================
         [HarmonyPostfix]
         [HarmonyPatch(typeof(GameState), nameof(GameState.TryGetWinner))]
@@ -709,20 +1211,20 @@ namespace PolyMode
         }
 
         // =========================================================================
-        // G. Reactions
+        // H. Reactions
         // =========================================================================
         private static Il2CppSystem.Action? _activePopupCallbackHolder;
 
         [HarmonyPrefix]
         [HarmonyPatch(typeof(CaptureCityReaction), nameof(CaptureCityReaction.Execute))]
-        public static bool CaptureCityReaction_Execute_Prefix(CaptureCityReaction __instance, Il2CppSystem.Action onComplete)
+        public static bool CaptureCityReaction_Prefix(CaptureCityReaction __instance, Il2CppSystem.Action onComplete)
         {
             try
             {
-                Loader.modLogger?.LogInfo("[Conquest-Popup] Prefix started.");
+                Loader.modLogger?.LogInfo("[Conquest-Popup] CaptureCityReaction started.");
 
-                if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
-                    && GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                if (GameManager.GameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                    && GameManager.GameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
                 {
                     return true;
                 }
@@ -735,15 +1237,35 @@ namespace PolyMode
                 bool isPreviousOwnerCapital = hasPreviousOwner && tile.capitalOf == __instance.action.OldOwnerId;
                 bool flag = isPreviousOwnerCapital && GameManager.IsPlayerViewing(__instance.action.OldOwnerId) && !GameManager.Client.IsSpectating;
                 Tile instance = tile.GetInstance();
-                int attackerId = __instance.action.PlayerId;
+                byte attackerId = __instance.action.PlayerId;
 
-                CameraController.Instance.CenterOnPosition(tile.coordinates.ToPosition(), 0.8f, null, false);
+                // Visuals
+                if (instance != null)
+                {
+                    AudioManager.PlaySFXAtTile(SFXTypes.Capture, tile.coordinates, 0, 1f, 1f);
+                    instance.Render();
+                    instance.SpawnShine(2f);
+                    instance.SpawnSparkles(2f);
+                    instance.StopFire();
 
-                // Temp Pointer Holder
-                _activePopupCallbackHolder = onComplete;
-                ExecutePopupLogic(__instance, _activePopupCallbackHolder, tile, playerState, prevOwnerState, isPreviousOwnerCapital, instance, attackerId);
+                    ReactionUtils.UpdateSurroundingBordersAndTransportPaths(attackerId, tile);
+                    ResourceManager.AddResourceOfTypeToResourceBar(attackerId, ResourceManager.Type.Score, __instance.action.Score, tile.coordinates, null, "None");
 
-                instance?.StopFire();
+                    // Temp Pointer Holder
+                    _activePopupCallbackHolder = onComplete;
+                    ExecutePopupLogic(__instance, _activePopupCallbackHolder, tile, playerState, prevOwnerState, isPreviousOwnerCapital, instance, attackerId);
+                }
+
+                Il2CppSystem.Collections.Generic.List<TileData> areaSorted = ActionUtils.GetCityAreaSorted(GameManager.GameState, tile);
+                if (areaSorted != null)
+                {
+                    for (int i = areaSorted.Count - 1; i >= 0; i--)
+                    {
+                        Tile instance2 = areaSorted[i].GetInstance();
+                        instance2.Render();
+                    }
+                }
+
                 if (tile.unit != null)
                 {
                     Tile tileInstance = MapRenderer.Current.GetTileInstance(__instance.action.PreviousHomeTown);
@@ -765,7 +1287,7 @@ namespace PolyMode
             }
             catch (Exception ex)
             {
-                Loader.modLogger?.LogError($"[Conquest-Popup] Prefix error: {ex}");
+                Loader.modLogger?.LogError($"[Conquest-Popup] CaptureCityReaction error: {ex}");
                 return true;
             }
         }
@@ -784,21 +1306,10 @@ namespace PolyMode
             {
                 Loader.modLogger?.LogInfo("[Conquest-Popup] ExecutePopupLogic started.");
 
-                // Visuals
-                if (instance != null)
-                {
-                    AudioManager.PlaySFXAtTile(SFXTypes.Capture, tile.coordinates, 0, 1f, 1f);
-                    instance.Render();
-                    instance.SpawnShine(2f);
-                    instance.SpawnSparkles(2f);
-                    instance.StopFire();
-                }
-
-                ReactionUtils.UpdateSurroundingBordersAndTransportPaths((byte)attackerId, tile);
-                ResourceManager.AddResourceOfTypeToResourceBar((byte)attackerId, ResourceManager.Type.Score, __instance.action.Score, tile.coordinates, null, "None");
-
                 if (GameManager.IsPlayerViewing((byte)attackerId) && !GameManager.Client.IsSpectating)
                 {
+                    CameraController.Instance.CenterOnPosition(tile.coordinates.ToPosition(), 0.8f, null, false);
+
                     // Attacker - No button
                     string tribeName = prevOwnerState.tribe.GetName();;
                     string capitalized = char.ToUpper(tribeName[0]) + tribeName.Substring(1);
@@ -817,6 +1328,8 @@ namespace PolyMode
                 }
                 else if (GameManager.IsPlayerViewing(__instance.action.OldOwnerId) && !GameManager.Client.IsSpectating)
                 {
+                    CameraController.Instance.CenterOnPosition(tile.coordinates.ToPosition(), 0.8f, null, false);
+
                     // Defender - With button
                     string linkedTribeNameWithSpace = playerState.GetLinkedTribeNameWithSpace(GameManager.GameState);
                     

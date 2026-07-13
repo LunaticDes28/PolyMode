@@ -1,23 +1,100 @@
 {
-	"gameType": {
-		"conquest": {
+    "techData": {
+        "organization": {
+			"techUnlocks": [
+				"farming",
+				"shields"
+			],
+			"improvementUnlocks": [
+				"harvestfruit"
+            ],
+			"cost": 1,
+			"idx": 6
+		},
+        "construction": {
+			"improvementUnlocks": [
+				"windmill",
+                "citadel",
+				"burnforest"
+			],
+			"cost": 3,
+			"idx": 9
+		}    
+    },
+    "improvementData":{
+		"citadel": {
+			"cost": 20,
+			"terrainRequirements": [
+				{
+					"terrain": "field"
+				},
+				{
+					"terrain": "forest"
+				},
+				{
+					"terrain": "mountain"
+				}                
+			],
+			"improvementAbilities": [
+				"claim",
+				"train"
+			],
+			"idx": -1
+		},
+        "createfruit":{
+            "idx": -1,
+            "hidden": true,
+            "creates": [
+				{
+					"resource": "fruit"
+				}
+			],
+            "improvementAbilities": [
+				"discrete"
+			],
+            "cost": 0
+        }
+    },
+    "unitData":{
+        "rewardwarrior": {
+			"health": 150,
+			"defence": 20,
+			"movement": 1,
+			"range": 1,
+			"attack": 20,
+			"cost": 3,
+			"unitAbilities": [
+				"dash",
+				"fortify",
+				"land",
+                "independent"
+			],
+			"weapon": 1,
+			"promotionLimit": 3,
+            "prefab": "warrior",
+			"idx": -1
+		}
+    },
+	"improvementAbility": {
+		"claim": {
+			"idx": -1
+		},
+		"train": {
 			"idx": -1
 		}
 	},
-	"gameMode": {
-		"conquest": {
-			"idx": -1
-		}
-	},
-	"gameRules": {
-		"Perfection": {
-		"conquest": false
-		},
-		"Domination": {
-		"conquest": false
-		},
-		"Sandbox": {
-			"conquest": false
-		}
-	}
+	"conquest": {
+        "one":{
+            "idx": -1
+        },
+        "two":{
+            "idx": -1
+        },
+        "three":{
+            "idx": -1
+        },
+        "four":{
+            "idx": -1
+        }
+    }
 }
