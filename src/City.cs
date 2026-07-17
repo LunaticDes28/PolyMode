@@ -15,7 +15,7 @@ namespace PolyMode
     {
         [HarmonyPrefix]
         [HarmonyPatch(typeof(CommandTriggerUIUtils), nameof(CommandTriggerUIUtils.ShowCommandTrigger))]
-        public static bool ShowCommandTrigger_Prefix(CommandTrigger commandTrigger)
+        public static bool ShowCommandTrigger_ThirdOption(CommandTrigger commandTrigger)
         {
             PlayerState playerState;
             GameManager.GameState.TryGetPlayer(GameManager.GameState.CurrentPlayer, out playerState);
@@ -73,7 +73,7 @@ namespace PolyMode
 
         [HarmonyPostfix]
         [HarmonyPatch(typeof(ImprovementDataExtensions), nameof(ImprovementDataExtensions.GetCityRewardsForLevel))]
-        public static void GetCityRewardsForLevel_Postfix(ref Il2CppStructArray<CityReward> __result, ImprovementData data, int level)
+        public static void GetCityRewardsForLevel_ThirdOption(ref Il2CppStructArray<CityReward> __result, ImprovementData data, int level)
         {
             if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
                 && GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
@@ -84,8 +84,8 @@ namespace PolyMode
             CityReward customReward = level switch
             {
                 1 => EnumCache<CityReward>.GetType("one"),
-                //2 => EnumCache<CityReward>.GetType("two"),
-                //3 => EnumCache<CityReward>.GetType("three"),
+                2 => EnumCache<CityReward>.GetType("two"),
+                3 => EnumCache<CityReward>.GetType("three"),
                 //4 => EnumCache<CityReward>.GetType("four"),
                 _ => CityReward.None
             };
@@ -140,24 +140,6 @@ namespace PolyMode
             }
         }
 
-        public static void Populate(GameState gameState, TileData tile, int FruitsToSpawn)
-        {
-            Il2CppSystem.Collections.Generic.List<TileData> cityAreaSorted = ActionUtils.GetCityAreaSorted(gameState, tile);
-            cityAreaSorted.Reverse();
-            int num = FruitsToSpawn;
-            for (int i = 0; i < cityAreaSorted.Count; i++)
-            {
-                if (cityAreaSorted[i].terrain == Polytopia.Data.TerrainData.Type.Field && cityAreaSorted[i].resource == null && cityAreaSorted[i].improvement == null && num > 0)
-                {
-                    Tile tileInstance = MapRenderer.Current.GetTileInstance(tile.coordinates);
-                    tileInstance.SpawnSparkles();
-                    gameState.ActionStack.Add((ActionBase)new BuildAction(tile.owner, EnumCache<ImprovementData.Type>.GetType("createfruit"), cityAreaSorted[i].coordinates, deductCost: false));
-                    num--;
-                }
-            }
-            gameState.ActionStack.Add((ActionBase)new IncreaseCurrencyAction(tile.owner, tile.coordinates, num, 0));
-        }
-
         [HarmonyPostfix]
         [HarmonyPatch(typeof(CityRewardAction), nameof(CityRewardAction.Execute))]
         public static void CustomRewards(CityRewardAction __instance, GameState state)
@@ -194,53 +176,167 @@ namespace PolyMode
             }
         }
 
-        [HarmonyPostfix]
-        [HarmonyPatch(typeof(AI), nameof(AI.ChooseCityReward))]
-        private static void AI_Choose(GameState gameState, TileData tile, CityReward[] rewards, ref CityReward __result)
-        {
-            
-            GameLogicData gld = gameState.GameLogicData;
-            CityReward[] rewardarray = GetRewardsForLevel(gld.GetImprovementData(tile.improvement.type), tile.improvement.level - 1);
-
-            System.Random random = new System.Random();
-
-            PlayerState playerState;
-            if (!gameState.TryGetPlayer(tile.owner, out playerState) || !GameManager.GameState.GameLogicData.TryGetData(playerState.tribe, out TribeData tribeData))
-            {
-                return;
-            }
-            if (tile.improvement.level == 2)
-            {
-                int num = random.Next(0, rewardarray.Length - 1);
-                __result = rewardarray[num];
-            }
-            else
-            if (tile.improvement.level >= 5)
-            {
-                int num = 1;
-                __result = rewardarray[num];
-            }
-            else
-            {
-                int num = random.Next(0, rewardarray.Length);
-                __result = rewardarray[num];
-            }
-
-            /*Main.modLogger.LogMessage("AI chose reward: "+rewardarray[num]);
-            if(int.TryParse(rewardarray[num].ToString(), out int value))
-            {
-                modLogger.LogMessage("\n\nDING_Postfix\n");
-                modLogger.LogMessage(tile.coordinates);
-                gameState.TryGetPlayer(tile.owner, out PlayerState player);
-                modLogger.LogMessage(player.UserName);
-            }*/
-        }
-
         public static CityReward[] GetRewardsForLevel(ImprovementData data, int level)
         {
             return data.GetCityRewardsForLevel(level);
         }
 
+        // =========================================================================
+        // B. Valhalla
+        // =========================================================================
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(CityRenderer), nameof(CityRenderer.RefreshCity))]
+        public static void Valhalla_Render(CityRenderer __instance)
+        {
+            if (__instance.dataChanged)
+            {
+                return;
+            }
+            var a = GameManager.GameState.Map.GetTile(__instance.Coordinates);
+            bool hasTwo = a.improvement.HasReward(EnumCache<CityReward>.GetType("two"));
+
+            if (hasTwo)
+            {
+                PolytopiaBackendBase.Common.TribeType tribe = __instance.Tribe;
+                PolytopiaBackendBase.Common.SkinType skinType = __instance.SkinType;
+                PolytopiaSpriteRenderer house = __instance.GetHouse(tribe, __instance.HOUSE_WORKSHOP, skinType);
+                house.sprite = PolyMod.Registry.GetSprite("valhalla");
+                int count = __instance.plots.Count;
+                int num = (int)System.Math.Floor(System.Math.Sqrt(count));
+
+                // Put Valhalla on the tallest column so it doesnt obstruct anything with its post-rendering rendering
+                int tallestplotidx = 0;
+                int tallestplotamount = -1;
+                for(int i=1; i<count; i++) //goes from 1 so it doesnt appear on capital
+                {
+                    if(__instance.plots[i].floors > tallestplotamount)
+                    {
+                        tallestplotamount = __instance.plots[i].floors;
+                        tallestplotidx = i;
+                    }
+                }
+                AddHouseIfNotPresent(__instance.plots[tallestplotidx], house);
+            }
+        }
+        
+        private static void AddHouseIfNotPresent(CityPlot plot, PolytopiaSpriteRenderer house)
+        {
+            bool flag = false;
+            foreach (var h in plot.houses)
+            {
+                if (h.sprite == house.sprite) { flag = true; break; }
+            }
+            if (!flag) plot.AddHouse(house);
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(ActionUtils), nameof(ActionUtils.TrainUnit))]
+        private static void Valhalla_Effect(GameState gameState, PlayerState playerState, TileData tile, UnitData unitData, UnitState __result)
+        {
+            try
+            {
+                if (__result == null || tile == null) return;
+
+                if (tile != null && tile.improvement != null && tile.improvement.type == ImprovementData.Type.City)
+                {
+                    if (tile.improvement.HasReward(EnumCache<CityReward>.GetType("two")))
+                    {
+                        __result.xp += 2;
+                        
+                        Loader.modLogger?.LogInfo($"[Conquest-City] XP successfully updated to: {__result.xp}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest-City] Error in TrainUnit Postfix: {ex.Message}");
+            }
+        }
+
+        // =========================================================================
+        // C. Tax Reform
+        // =========================================================================
+        /*[HarmonyPostfix]
+        [HarmonyPatch(typeof(TileDataExtensions), nameof(TileDataExtensions.CalculateWork), new Type[] { typeof(TileData), typeof(GameState), typeof(PlayerState), typeof(int) })]
+        private static void CalculateWorkA_TaxReform(TileData tile, GameState gameState, PlayerState playerState, int improvementLevel, ref int __result)
+        {
+            try
+            {
+                if (tile == null) return;
+
+                if (tile != null && tile.improvement != null && tile.improvement.type == ImprovementData.Type.City)
+                {
+                    if (tile.improvement.HasReward(EnumCache<CityReward>.GetType("three")))
+                    {
+                        __result *= 3;
+                        
+                        Loader.modLogger?.LogInfo($"[Conquest-City] Work (A) successfully updated to: {__result}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest-City] Error in CalculateWork: {ex.Message}");
+            }
+        }*/    
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(TileDataExtensions), nameof(TileDataExtensions.CalculateWork), new Type[] { typeof(TileData), typeof(GameState), typeof(int) })]
+        private static void CalculateWorkB_TaxReform(TileData tile, GameState gameState, int improvementLevel, ref int __result)
+        {
+            try
+            {
+                if (tile == null) return;
+
+                if (tile != null && tile.improvement != null && tile.improvement.type == ImprovementData.Type.City)
+                {
+                    if (tile.improvement.HasReward(EnumCache<CityReward>.GetType("three")))
+                    {
+                        __result *= 3;
+                        
+                        Loader.modLogger?.LogInfo($"[Conquest-City] Work (B) successfully updated to: {__result}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest-City] Error in CalculateWork: {ex.Message}");
+            }
+        }      
+
+        /*[HarmonyPostfix]
+        [HarmonyPatch(typeof(CityStatusNameContainer), nameof(CityStatusNameContainer.SetCity))]
+        private static void SetCity_ChangeWorkIcon(CityStatusNameContainer __instance, global:: City city)
+        {
+            if (__instance.workContainer != null && __instance.workContainer.gameObject.activeSelf && __instance.workIcon != null)
+            {
+                __instance.workIcon.sprite = PolyMod.Registry.GetSprite("three"); 
+
+                __instance.UpdateSize();
+            }
+        }*/ 
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(CommandUtils), nameof(CommandUtils.GetTrainableUnits))]
+        private static void DenyTrainableUnits_TaxReform(GameState gameState, PlayerState player, TileData tile, ref Il2CppSystem.Collections.Generic.List<TrainCommand> __result, bool includeUnavailable = false)
+        {
+            if (tile.owner != player.Id)
+            {
+                return;
+            }
+
+            if (!tile.improvement.HasReward(EnumCache<CityReward>.GetType("three")))
+            {
+                return;
+            }
+
+            __result = new Il2CppSystem.Collections.Generic.List<TrainCommand>();
+            return;
+        }
+
+        // =========================================================================
+        // D. Reactions
+        // =========================================================================
         [HarmonyPostfix]
         [HarmonyPatch(typeof(CityRewardReaction), nameof(CityRewardReaction.Execute))]
         public static void CityRewardReaction_Postfix(CityRewardReaction __instance, Il2CppSystem.Action onComplete)

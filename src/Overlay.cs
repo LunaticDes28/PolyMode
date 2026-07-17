@@ -180,7 +180,7 @@ namespace PolyMode
     {
         [HarmonyPostfix]
         [HarmonyPatch(typeof(Building), nameof(Building.SetData))]
-        public static void Building_SetData_Postfix(Building __instance, ImprovementData data)
+        public static void Building_SetData(Building __instance, ImprovementData data)
         {
             try
             {

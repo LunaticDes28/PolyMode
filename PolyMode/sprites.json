@@ -2,5 +2,8 @@
     "citadel__": {
         "pixelsPerUnit": 1333,
         "pivot": [0.5, 0.25]
-    }
+    },
+    "valhalla__": {
+        "pixelsPerUnit": 6667
+    }  
 }

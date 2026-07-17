@@ -16,7 +16,7 @@ namespace PolyMode
         // =========================================================================
         [HarmonyPostfix]
         [HarmonyPatch(typeof(UIHorizontalListData), nameof(UIHorizontalListData.AddItem))]
-        public static void AddItem_Postfix(UIHorizontalListData __instance, string label, int id)
+        public static void AddItem_GamemodeOptions(UIHorizontalListData __instance, string label, int id)
         {
             if (__instance == null) return;
 
@@ -68,7 +68,7 @@ namespace PolyMode
         
         [HarmonyPostfix]
         [HarmonyPatch(typeof(GameSetupScreen_UI2), nameof(GameSetupScreen_UI2.OnGameModeChanged))]
-        public static void OnGameModeChanged_Postfix(GameSetupScreen_UI2 __instance, int index)
+        public static void OnGameModeChanged_Conquest(GameSetupScreen_UI2 __instance, int index)
         {
             if (__instance == null || __instance.view == null) return;
             if (__instance.gameModeData == null || __instance.gameModeData.labels == null) return;
@@ -111,7 +111,7 @@ namespace PolyMode
 
         [HarmonyPostfix]
         [HarmonyPatch(typeof(GameSetupScreen_UI2), nameof(GameSetupScreen_UI2.OnShow))]
-        public static void OnShow_Postfix(GameSetupScreen_UI2 __instance)
+        public static void OnShow_CreateGamemodeList(GameSetupScreen_UI2 __instance)
         {
             try
             {
@@ -154,7 +154,7 @@ namespace PolyMode
 
         [HarmonyPrefix]
         [HarmonyPatch(typeof(MapDataExtensions), nameof(MapDataExtensions.GetMaximumOpponentCountForMapSize))]
-        public static bool GetMaximumOpponentCount_Prefix(int mapSize, MapPreset mapPreset, ref int __result)
+        public static bool GetMaximumOpponentCount_Conquest(int mapSize, MapPreset mapPreset, ref int __result)
         {
             try
             {
@@ -195,7 +195,7 @@ namespace PolyMode
         // =========================================================================
         [HarmonyPostfix]
         [HarmonyPatch(typeof(GameModeButtonWrapper), nameof(GameModeButtonWrapper.SetData))]
-        public static void SetData_Postfix(GameModeButtonWrapper __instance, GameMode summaryGameMode, GameType gameType, int scoreLimit = 10000)
+        public static void SetData_GamemodeInfo(GameModeButtonWrapper __instance, GameMode summaryGameMode, GameType gameType, int scoreLimit = 10000)
         {
             try
             {
@@ -224,7 +224,7 @@ namespace PolyMode
 
         [HarmonyPrefix]
         [HarmonyPatch(typeof(GameModeButtonWrapper), nameof(GameModeButtonWrapper.OnButtonClicked))]
-        public static bool OnButtonClicked_Prefix(int id, UnityEngine.EventSystems.BaseEventData? eventData = null)
+        public static bool OnButtonClicked_GamemodeInfo(int id, UnityEngine.EventSystems.BaseEventData? eventData = null)
         {
             try
             {

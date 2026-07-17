@@ -1,16 +1,5 @@
 {
     "techData": {
-        "organization": {
-			"techUnlocks": [
-				"farming",
-				"shields"
-			],
-			"improvementUnlocks": [
-				"harvestfruit"
-            ],
-			"cost": 1,
-			"idx": 6
-		},
         "construction": {
 			"improvementUnlocks": [
 				"windmill",
@@ -19,7 +8,33 @@
 			],
 			"cost": 3,
 			"idx": 9
-		}    
+		},
+		"mining": {
+			"techUnlocks": [
+				"smithery"
+			],
+			"improvementUnlocks": [
+				"mine"
+			],
+			"abilityUnlocks": [
+				"mountaincitadel"
+			],
+			"cost": 2,
+			"idx": 23
+		},
+		"ramming": {
+			"techUnlocks": [
+				"aquatism"
+			],
+			"unitUnlocks": [
+				"rammership"
+			],
+			"abilityUnlocks": [
+				"watercitadel"
+			],
+			"cost": 2,
+			"idx": 44
+		}
     },
     "improvementData":{
 		"citadel": {
@@ -33,11 +48,16 @@
 				},
 				{
 					"terrain": "mountain"
-				}                
+				},
+				{
+					"terrain": "water"
+				},
+				{
+					"terrain": "mountain"
+				}  
 			],
 			"improvementAbilities": [
-				"claim",
-				"train"
+				"citadel"
 			],
 			"idx": -1
 		},
@@ -76,10 +96,15 @@
 		}
     },
 	"improvementAbility": {
-		"claim": {
+		"citadel": {
+			"idx": -1
+		}
+	},
+	"playerAbility": {
+		"mountaincitadel": {
 			"idx": -1
 		},
-		"train": {
+		"watercitadel": {
 			"idx": -1
 		}
 	},

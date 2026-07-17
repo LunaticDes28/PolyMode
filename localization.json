@@ -10,5 +10,29 @@
 	},
     "building_names_citadel": {
 		"English": "Citadel"
-	}
+	},
+    "building_ability_citadel": {
+		"English": "Expands border of its city to adjacent tiles. You can train units on it and defence bonus is applied."
+	},
+    "player_abilities_mountaincitadel": {
+		"English": "Mountain Citadel"
+	},    
+    "player_abilities_watercitadel": {
+		"English": "Water Citadel"
+	},   
+    "tooltip_ability_mountaincitadel": {
+		"English": "Allows Citadel to be built on Mountain and provides defence bonus"
+	},    
+    "tooltip_ability_watercitadel": {
+		"English": "Allows Citadel to be built on Water and provides defence bonus"
+	},     
+    "wcontroller_reward_one": {
+        "English": "Evacuation"
+    },    
+    "wcontroller_reward_two": {
+        "English": "Valhalla"
+    },    
+    "wcontroller_reward_three": {
+        "English": "Tax Reform"
+    }
 }

@@ -12,10 +12,8 @@ namespace PolyMode
         // =========================================================================
         [HarmonyPostfix]
         [HarmonyPatch(typeof(GameStateUtils), nameof(GameStateUtils.GenerateMap))]
-        private static void GenerateMap_Postfix(GameState gameState)
+        private static void GenerateMap_SetGamemode(GameState gameState)
         {
-            if (gameState?.Settings == null) return;
-
             try
             {
                 bool isConquest = UI_2.IsConquestSelected;
@@ -57,7 +55,7 @@ namespace PolyMode
         // =========================================================================
         [HarmonyPrefix]
         [HarmonyPatch(typeof(MapGenerator), nameof(MapGenerator.GeneratePlayerCapitalPositions))]
-        private static bool GeneratePlayerCapitalPositions_Prefix(
+        private static bool GeneratePlayerCapitalPositions_NewQuadrants(
             MapGenerator __instance,
             int width,
             int playerCount,
@@ -65,8 +63,10 @@ namespace PolyMode
         {
             try
             {
-                if (GameManager.GameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
-                    && GameManager.GameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                Loader.modLogger?.LogInfo($"[CapitalGenerator] Started");
+
+                if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                    && GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
                 {
                     return true;
                 }
@@ -176,7 +176,7 @@ namespace PolyMode
         // =========================================================================
         [HarmonyPostfix]
         [HarmonyPatch(typeof(MapGenerator), nameof(MapGenerator.GenerateInternal))]
-        private static void GenerateInternal_Postfix(MapGenerator __instance, GameState gameState)
+        private static void GenerateInternal_DistributeVillages(MapGenerator __instance, GameState gameState)
         {
             try
             {
@@ -293,7 +293,7 @@ namespace PolyMode
         // =========================================================================
         [HarmonyPostfix]
         [HarmonyPatch(typeof(StartMatchAction), nameof(StartMatchAction.ExecuteDefault))]
-        private static void StartMatchAction_ExecuteDefault_Postfix(StartMatchAction __instance, GameState gameState)
+        private static void StartMatchAction_InitializeVillages(StartMatchAction __instance, GameState gameState)
         {
             if (gameState?.Settings == null) return;
             try
@@ -435,7 +435,7 @@ namespace PolyMode
         // =========================================================================
         [HarmonyPostfix]
         [HarmonyPatch(typeof(GameLogicData), nameof(GameLogicData.CanBuild))]
-        private static void GameLogicData_CanBuild(GameLogicData __instance, GameState gameState, TileData tile, PlayerState playerState, ImprovementData improvement, ref bool __result)
+        private static void CanBuild_Citadel(GameLogicData __instance, GameState gameState, TileData tile, PlayerState playerState, ImprovementData improvement, ref bool __result)
         {
             if (tile.improvement != null && improvement.type != ImprovementData.Type.Road) 
             {
@@ -479,6 +479,17 @@ namespace PolyMode
                     {
                         cityLimit = 3;
                         capitalLimit = 3;
+                    }
+
+                    if (tile.terrain == TerrainData.Type.Mountain && !playerState.HasAbility(EnumCache<PlayerAbility.Type>.GetType("mountaincitadel"), gameState))
+                    {
+                        __result = false;
+                        return;
+                    }
+                    if (tile.terrain == TerrainData.Type.Water && !playerState.HasAbility(EnumCache<PlayerAbility.Type>.GetType("watercitadel"), gameState))
+                    {
+                        __result = false;
+                        return;
                     }
 
                     if (cityTile.capitalOf != 0 && citadel >= capitalLimit)
@@ -552,7 +563,7 @@ namespace PolyMode
 
         [HarmonyPostfix]
         [HarmonyPatch(typeof(BuildAction), nameof(BuildAction.ExecuteDefault))]
-        private static void BuildAction__Postfix(BuildAction __instance, GameState gameState)
+        private static void BuildAction_Citadel(BuildAction __instance, GameState gameState)
         {
             try
             {
@@ -615,7 +626,7 @@ namespace PolyMode
 
         [HarmonyPrefix]
         [HarmonyPatch(typeof(DestroyImprovementAction), nameof(DestroyImprovementAction.ExecuteDefault))]
-        private static bool DestroyImprovementAction__Prefix(DestroyImprovementAction __instance, GameState state)
+        private static bool DestroyImprovementAction_Citadel(DestroyImprovementAction __instance, GameState state)
         {
             try
             {
@@ -654,7 +665,6 @@ namespace PolyMode
                                     && tileData2.rulingCityCoordinates == cityTile.coordinates
                                     && tileData2.coordinates != tile.coordinates)
                                 {
-                                    Loader.modLogger?.LogInfo("[Conquest-Citadel] isRule");
                                     isRule = true;
                                     break;
                                 }
@@ -662,8 +672,6 @@ namespace PolyMode
 
                             if (!isRule)
                             {
-                                Loader.modLogger?.LogInfo("[Conquest-Citadel] Unrule");
-
                                 int num = ScoreSheet.tileValue;
                                 if (tileData.improvement != null)
                                 {
@@ -709,7 +717,7 @@ namespace PolyMode
 
         [HarmonyPostfix]
         [HarmonyPatch(typeof(UnitDataExtensions), nameof(UnitDataExtensions.GetDefenceBonus))]
-        private static void GetDefenceBonus_Postfix(UnitState unit, GameState gameState, ref int __result)
+        private static void GetDefenceBonus_Citadel(UnitState unit, GameState gameState, ref int __result)
         {
             TileData tile = gameState.Map.GetTile(unit.coordinates);
             if (tile == null)
@@ -722,15 +730,20 @@ namespace PolyMode
                 __result = 15;
             }
 
-            if (tile != null && tile.improvement != null && tile.improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel") && tile.terrain == TerrainData.Type.Mountain && tile.unit.UnitData.attack < 4 && tile.owner == unit.owner)
+            if (tile != null && tile.improvement != null && tile.improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel") && tile.terrain == TerrainData.Type.Mountain && tile.unit.UnitData.attack <= 3 && tile.owner == unit.owner)
+            {
+                __result = 40;
+            }
+
+            if (tile != null && tile.improvement != null && tile.improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel") && tile.terrain == TerrainData.Type.Water && tile.unit.UnitData.attack <= 3 && tile.owner == unit.owner)
             {
                 __result = 40;
             }
         }
 
-        [HarmonyPostfix]
+        /*[HarmonyPostfix]
         [HarmonyPatch(typeof(TrainCommand), nameof(TrainCommand.IsValid))]
-        private static void TrainCommand_IsValid(TrainCommand __instance, GameState state, ref bool __result, string validationError)
+        private static void TrainCommand_Citadel(TrainCommand __instance, GameState state, ref bool __result, string validationError)
         {
             TileData tile = state.Map.GetTile(__instance.Coordinates);
             if (tile.improvement != null && tile.improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel")
@@ -747,16 +760,21 @@ namespace PolyMode
                     }
                 }
             }
-        }
+        }*/
 
         [HarmonyPostfix]
         [HarmonyPatch(typeof(CommandUtils), nameof(CommandUtils.GetTrainableUnits))]
-        private static void GetTrainableUnits_Postfix(GameState gameState, PlayerState player, TileData tile, ref Il2CppSystem.Collections.Generic.List<TrainCommand> __result, bool includeUnavailable = false)
+        private static void GetTrainableUnits_Citadel(GameState gameState, PlayerState player, TileData tile, ref Il2CppSystem.Collections.Generic.List<TrainCommand> __result, bool includeUnavailable = false)
         {
             Il2CppSystem.Collections.Generic.List<TrainCommand> list = new Il2CppSystem.Collections.Generic.List<TrainCommand>();
             if (tile.improvement != null && tile.improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel"))
                 {
                     if (tile.owner != player.Id)
+                    {
+                        return;
+                    }
+
+                    if (tile.terrain == TerrainData.Type.Water)
                     {
                         return;
                     }
@@ -779,34 +797,26 @@ namespace PolyMode
 
         [HarmonyPostfix]
         [HarmonyPatch(typeof(ActionUtils), nameof(ActionUtils.TrainUnit))]
-        private static void TrainUnit_Postfix(GameState gameState, PlayerState playerState, TileData tile, UnitData unitData, UnitState __result)
+        private static void TrainUnit_FindHome(GameState gameState, PlayerState playerState, TileData tile, UnitData unitData, UnitState __result)
         {
             try
             {
-                // 1. 頂層安全防護：如果遊戲本體回傳的單位本身就是 null，或者地塊無效，直接退出
                 if (__result == null || tile == null) return;
 
-                // 2. 【關鍵修正】利用短路求值先防範空地 null，再安全比對是否為 citadel
                 if (tile.improvement != null && tile.improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel"))
                 {
-                    Loader.modLogger?.LogInfo("[Conquest-Train] Rewriting unit home at citadel");
-                    
-                    // 將部隊的家園（Home）重新綁定到該駐軍所隸屬的都市中心
                     __result.home = tile.rulingCityCoordinates;
-                    
-                    Loader.modLogger?.LogInfo($"[Conquest-Train] Home successfully updated to: {__result.home.ToString()}");
                 }
             }
             catch (Exception ex)
             {
-                // 3. 萬一出錯，捕獲它並印出日誌，但絕對不干擾遊戲本體獲取 __result 物件
                 Loader.modLogger?.LogError($"[Conquest-Train] Shielded error in TrainUnit Postfix: {ex.Message}");
             }
         }
 
         [HarmonyPrefix]
         [HarmonyPatch(typeof(ActionUtils), nameof(ActionUtils.GetCityAreaSorted))]
-        private static bool GetCityAreaSorted__Prefix(GameState gameState, TileData cityTile, ref Il2CppSystem.Collections.Generic.List<TileData> __result)
+        private static bool GetCityAreaSorted_Conquest(GameState gameState, TileData cityTile, ref Il2CppSystem.Collections.Generic.List<TileData> __result)
         {
             try
             {
@@ -856,7 +866,7 @@ namespace PolyMode
 
         [HarmonyPrefix]
         [HarmonyPatch(typeof(GameLogicData), nameof(GameLogicData.HasImprovementWithinCityBorders))]
-        private static bool HasImprovementWithinCityBorders__Prefix(MapData map, WorldCoordinates cityCoordinates, ImprovementData.Type improvementType, ref bool __result)
+        private static bool HasImprovementWithinCityBorders_Conquest(MapData map, WorldCoordinates cityCoordinates, ImprovementData.Type improvementType, ref bool __result)
         {
             try
             {
@@ -907,7 +917,7 @@ namespace PolyMode
         // =========================================================================
         [HarmonyPostfix]
         [HarmonyPatch(typeof(GameLogicData), nameof(GameLogicData.GetTechPrice))]
-        private static void Conquest_TechCost_Postfix(GameLogicData __instance, TechData techData, PlayerState playerState, GameState state, ref int __result)
+        private static void GetTechPrice_Conquest(GameLogicData __instance, TechData techData, PlayerState playerState, GameState state, ref int __result)
         {
             if (state == null || techData == null) return;
             try
@@ -918,9 +928,15 @@ namespace PolyMode
                     return;
                 };
 
-                int addition = (int)(playerState.cities + state.CurrentTurn);
-                addition = Math.Min(addition, 5 + techData.cost * playerState.cities * 3);
-                __result = (int)Math.Ceiling((double)(techData.cost + addition));
+                float num = Math.Max(4 + techData.cost, playerState.cities + state.CurrentTurn * techData.cost);
+                num = (float)Math.Min(num, techData.cost * (playerState.cities + 2) * 2);
+                
+                if (__instance.HasAbility(playerState, PlayerAbility.Type.Literacy))
+                {
+                    float num2 = 0.66666f;
+                    num *= num2;
+                }
+                __result = (int)Math.Ceiling((double)num);
             }
             catch (Exception ex)
             {
@@ -930,7 +946,7 @@ namespace PolyMode
 
         [HarmonyPrefix]
         [HarmonyPatch(typeof(CaptureCityAction), nameof(CaptureCityAction.ExecuteDefault))]
-        private static bool Conquest_CaptureCityAction_Prefix(CaptureCityAction __instance, GameState gameState)
+        private static bool CaptureCityAction_Conquest(CaptureCityAction __instance, GameState gameState)
         {
             if (gameState?.Settings == null) return true;
             try
@@ -1130,11 +1146,11 @@ namespace PolyMode
         }
 
         // =========================================================================
-        // G. Win Conditions & AI interpretation
+        // G. Win Conditions
         // =========================================================================
         [HarmonyPostfix]
         [HarmonyPatch(typeof(GameState), nameof(GameState.TryGetWinner))]
-        private static void TryGetWinnerDefault_Postfix(GameState __instance, ref bool __result, ref PlayerState winner)
+        private static void TryGetWinner_Conquest(GameState __instance, ref bool __result, ref PlayerState winner)
         {
             if (__result) return;
 
@@ -1174,42 +1190,6 @@ namespace PolyMode
             }
         }
 
-        [HarmonyPrefix]
-        [HarmonyPatch(typeof(AI), nameof(AI.GetGameProgress))]
-        private static bool GetGameProgress_Prefix(ref float __result, GameState gameState, PlayerState winningPlayer)
-        {
-            if (gameState?.Settings == null) return true;
-
-            try
-            {
-                if (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
-                    && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
-                {
-                    return true;
-                }
-                
-                if (winningPlayer == null)
-                {
-                    __result = 0f;
-                    return false;
-                }
-
-                float totalCities = Math.Max(0.1f, (float)MapDataExtensions.CountCities(gameState));
-                float cityProgress = (float)winningPlayer.cities / totalCities;
-                
-                __result = Math.Min(1f, Math.Max(0f, cityProgress));
-                
-                return false; 
-
-            }
-            catch (Exception ex)
-            {
-                Loader.modLogger?.LogError($"[Conquest-AI] Error in GetGameProgress detour: {ex.Message}");
-                __result = 0f; 
-                return false;   // DON'T allow vanilla code run because custom gamemode cause crash
-            }
-        }
-
         // =========================================================================
         // H. Reactions
         // =========================================================================
@@ -1217,7 +1197,7 @@ namespace PolyMode
 
         [HarmonyPrefix]
         [HarmonyPatch(typeof(CaptureCityReaction), nameof(CaptureCityReaction.Execute))]
-        public static bool CaptureCityReaction_Prefix(CaptureCityReaction __instance, Il2CppSystem.Action onComplete)
+        public static bool CaptureCityReaction_Conquest(CaptureCityReaction __instance, Il2CppSystem.Action onComplete)
         {
             try
             {

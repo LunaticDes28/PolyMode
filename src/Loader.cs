@@ -31,6 +31,8 @@ namespace PolyMode
             Harmony.CreateAndPatchAll(typeof(Main));
             Harmony.CreateAndPatchAll(typeof(UI_2));
             Harmony.CreateAndPatchAll(typeof(City));
+            Harmony.CreateAndPatchAll(typeof(CustomAI));
+            Harmony.CreateAndPatchAll(typeof(MapAnalysisUtils));
             
             Harmony.CreateAndPatchAll(typeof(CitadelNameOverlay));
             Harmony.CreateAndPatchAll(typeof(CitadelOverlayPatches));
