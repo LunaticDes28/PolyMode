@@ -13,6 +13,9 @@ namespace PolyMode
 {
     public static class CustomAI
     {
+        // =========================================================================
+        // A. Diplomacy Behaviors
+        // =========================================================================
         [HarmonyPrefix]
         [HarmonyPatch(typeof(AI), nameof(AI.GetGameProgress))]
         private static bool GetGameProgress_Conquest(ref float __result, GameState gameState, PlayerState winningPlayer)
@@ -49,6 +52,9 @@ namespace PolyMode
             }
         }
 
+        // =========================================================================
+        // B. Development Behaviors
+        // =========================================================================
         [HarmonyPostfix]
         [HarmonyPatch(typeof(AI), nameof(AI.ChooseCityReward))]
         private static void ChooseCityReward_Conquest(GameState gameState, TileData tile, CityReward[] rewards, ref CityReward __result)
@@ -74,7 +80,7 @@ namespace PolyMode
                 CityAnalysisResult? centerResult = MapAnalysisUtils.ScanCity(gameState.Map, gameState, tile, 3, true, playerState);
                 MapAnalysisUtils.LogAnalysisResult(tile, centerResult, 3);
 
-                if (centerResult != null && centerResult.EnemyCityCount >= 3 && centerResult.EnemyCityCount - centerResult.OwnedCityCount >= 2)
+                if (centerResult != null && centerResult.EnemyCityCount >= 2 && centerResult.EnemyCityCount - centerResult.OwnedCityCount >= 2)
                 {
                     Loader.modLogger?.LogInfo(
                     $"[Conquest-Evacuation] City at location ({tile.coordinates.X}, {tile.coordinates.Y}) unfavorable. " +
@@ -125,155 +131,97 @@ namespace PolyMode
             }
         }
 
-        /*[HarmonyPrefix]
-        [HarmonyPatch(typeof(AI), nameof(AI.AddPossibleImprovementCommands))]
-        private static bool AddPossibleImprovementCommands_Prefix(
-            GameState gameState, 
-            PlayerState player, 
-            Il2CppSystem.Collections.Generic.List<AI.ScoredCommand> possibleCommands)
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(AI), nameof(AI.GetImprovementScore))]
+        private static void GetImprovementScore_Citadel(GameState gameState, ImprovementData improvementData, TileData tileData, PlayerState player, ref float __result)
         {
-            if (gameState == null || player == null || possibleCommands == null) return true;
-            if (player.aiState == null || player.aiState.PlayerMapData == null || player.aiState.PlayerMapData.empireTiles == null) return true;
-
+            if (gameState == null || tileData == null || player == null) return;
+            
             try
             {
-                foreach (TileData tileData in player.aiState.PlayerMapData.empireTiles)
+                float num = 0;
+                TileData rulingCity = gameState.Map.GetTile(tileData.rulingCityCoordinates);
+                if (rulingCity != null && rulingCity.improvement != null)
                 {
-                    if (tileData == null || tileData.improvement != null) continue;
+                    int expansionRadius = rulingCity.improvement.borderSize;
 
-                    var buildableImprovements = CommandUtils.GetBuildableImprovements(gameState, player, tileData, true);
-                    if (buildableImprovements == null) continue;
+                    CityAnalysisResult? bestCornerResult = MapAnalysisUtils.ScanCity(
+                        gameState.Map,
+                        gameState,
+                        rulingCity,
+                        5,
+                        false, 
+                        player,
+                        Faction.Both,
+                        true                 
+                    );
 
-                    foreach (CommandBase commandBase in buildableImprovements)
+                    if (bestCornerResult != null && bestCornerResult.TargetTile != null)
                     {
-                        if (commandBase == null) continue;
+                        TileData targetedCornerTile = bestCornerResult.TargetTile;
 
-                        BuildCommand buildCommand = commandBase.Cast<BuildCommand>();
-                        if (buildCommand == null) continue;
-
-                        ImprovementData improvementData;
-                        if (!gameState.GameLogicData.TryGetData(buildCommand.Type, out improvementData) || improvementData == null) continue;
-
-                        // 獲取原版基礎建築評分
-                        float num = AI.GetImprovementScore(gameState, improvementData, tileData, player);
-
-                        if ((num > 0f && improvementData.rewards.GetPopulation() > 0) || improvementData.growthRewards.GetPopulation() > 0)
+                        if (tileData.coordinates.X == targetedCornerTile.coordinates.X && 
+                            tileData.coordinates.Y == targetedCornerTile.coordinates.Y)
                         {
-                            TileData tile = gameState.Map.GetTile(tileData.rulingCityCoordinates);
-                            if (tile != null && tile.CanCityBeUpgraded(gameState))
+                            float totalStrategicScore = 0f;
+
+                            // ---- 評估 A：微觀土地擴張可行性 (檢查法定 1 或 2 半徑內真正的無主土地) ----
+                            WorldCoordinates centerCoord = new WorldCoordinates(tileData.coordinates.X, tileData.coordinates.Y);
+                            TileData[] nearbyTiles = gameState.Map.GetAreaSorted(centerCoord, expansionRadius, true, true);
+
+                            int unclaimedCount = 0;
+                            if (nearbyTiles != null)
                             {
-                                int num2 = tile.PopulationNeededToUpgradeCity();
-                                if (num2 > 0)
+                                foreach (var tileInZone in nearbyTiles)
                                 {
-                                    num += (float)(200 / num2);
-                                }
-                            }
-                        }
-
-                        // ==================== 🧠 宏觀視野 + 邊界吞併雙重加成核心 ====================
-                        if (improvementData.type == EnumCache<ImprovementData.Type>.GetType("citadel"))
-                        {
-                            TileData rulingCity = gameState.Map.GetTile(tileData.rulingCityCoordinates);
-                            if (rulingCity != null && rulingCity.improvement != null)
-                            {
-                                int expansionRadius = rulingCity.improvement.borderSize;
-
-                                CityAnalysisResult? bestCornerResult = MapAnalysisUtils.ScanCity(
-                                    gameState.Map,
-                                    gameState,
-                                    rulingCity,
-                                    5,
-                                    false, 
-                                    player,
-                                    Faction.Both,
-                                    true                 
-                                );
-
-                                if (bestCornerResult != null && bestCornerResult.TargetTile != null)
-                                {
-                                    TileData targetedCornerTile = bestCornerResult.TargetTile;
-
-                                    if (tileData.coordinates.X == targetedCornerTile.coordinates.X && 
-                                        tileData.coordinates.Y == targetedCornerTile.coordinates.Y)
+                                    // 判定是否為未被任何城市統治、此座城堡蓋下去實質可以打包帶走的無主格子
+                                    if (tileInZone != null && (tileInZone.owner == 0))
                                     {
-                                        float totalStrategicBonus = 0f;
-
-                                        // ---- 評估 A：微觀土地擴張可行性 (檢查法定 1 或 2 半徑內真正的無主土地) ----
-                                        WorldCoordinates centerCoord = new WorldCoordinates(tileData.coordinates.X, tileData.coordinates.Y);
-                                        TileData[] nearbyTiles = gameState.Map.GetAreaSorted(centerCoord, expansionRadius, true, true);
-
-                                        int unclaimedCount = 0;
-                                        if (nearbyTiles != null)
-                                        {
-                                            foreach (var tileInZone in nearbyTiles)
-                                            {
-                                                // 判定是否為未被任何城市統治、此座城堡蓋下去實質可以打包帶走的無主格子
-                                                if (tileInZone != null && (tileInZone.owner == 0))
-                                                {
-                                                    unclaimedCount++;
-                                                }
-                                            }
-                                        }
-
-                                        MapAnalysisUtils.LogAnalysisResult(rulingCity, bestCornerResult, 5);
-
-                                        // 根據範圍內「實質能吞併」的土地數量給予擴張分數
-                                        if (unclaimedCount > 0)
-                                        {
-                                            float expansionScore = unclaimedCount * 40f; 
-                                            totalStrategicBonus += expansionScore;
-                                            
-                                            Loader.modLogger?.LogInfo(
-                                                $"[AI-Expansion] Strategic Corner Matched! Corner {bestCornerResult.TileTypeLabel} can successfully claim {unclaimedCount} tiles. " +
-                                                $"Adding Expansion Score: +{expansionScore}");
-                                        }
-
-                                        // ---- 評估 B：軍事威脅度 (從 4 格宏觀結果中直接累加) ----
-                                        if (bestCornerResult.EnemyCityCount > 0 || bestCornerResult.OwnedCityCount > 0)
-                                        {
-                                            float militaryScore = bestCornerResult.EnemyCityCount * 100f - bestCornerResult.EnemyCityCount * 50f; 
-                                            totalStrategicBonus += militaryScore;
-
-                                            Loader.modLogger?.LogInfo(
-                                                $"[AI-Tactics] Frontline Warning! Corner {bestCornerResult.TileTypeLabel} detected {bestCornerResult.EnemyCityCount} enemies within radius 5. " +
-                                                $"Adding Military Score: +{militaryScore}");
-                                        }
-
-                                        // 分數匯流注入
-                                        num += totalStrategicBonus;
-                                    }
-                                    else
-                                    {
-                                        // 非最優前線點，砍分
-                                        num *= 0.1f;
+                                        unclaimedCount++;
                                     }
                                 }
                             }
-                        }
-                        // =======================================================================
 
-                        num *= AI.getPriceFactor(improvementData.cost, player);
+                            MapAnalysisUtils.LogAnalysisResult(rulingCity, bestCornerResult, 5);
 
-                        if (num > 1f)
-                        {
-                            CommandBase command = new BuildCommand(player.Id, improvementData.type, tileData.coordinates);
-                            possibleCommands.Add(new AI.ScoredCommand
+                            // 根據範圍內「實質能吞併」的土地數量給予擴張分數
+                            if (unclaimedCount > 0)
                             {
-                                command = command,
-                                score = num
-                            });
-                            Loader.modLogger?.LogInfo($"[AI-Tactics] Successfully added new BuildCommand")
+                                float expansionScore = unclaimedCount * 50f; 
+                                totalStrategicScore += expansionScore;
+                                
+                                Loader.modLogger?.LogInfo(
+                                    $"[AI-Expansion] Strategic Corner Matched! Corner {bestCornerResult.TileTypeLabel} can successfully claim {unclaimedCount} tiles. " +
+                                    $"Adding Expansion Score: +{expansionScore}");
+                            }
+
+                            // ---- 評估 B：軍事威脅度 (從 4 格宏觀結果中直接累加) ----
+                            if (bestCornerResult.EnemyCityCount > 0 || bestCornerResult.OwnedCityCount > 0)
+                            {
+                                float militaryScore = bestCornerResult.EnemyCityCount * 100f - bestCornerResult.OwnedCityCount * 50f; 
+                                totalStrategicScore += militaryScore;
+
+                                Loader.modLogger?.LogInfo(
+                                    $"[AI-Tactics] Frontline Warning! Corner {bestCornerResult.TileTypeLabel} detected {bestCornerResult.EnemyCityCount} enemies within radius 5. " +
+                                    $"Adding Military Score: +{militaryScore}");
+                            }
+                            // 分數匯流注入
+                            num += totalStrategicScore;
+                        }
+                        else
+                        {
+                            // 非最優前線點，砍分
+                            num *= 0.1f;
                         }
                     }
                 }
-
-                return false; 
+                num *= AI.getPriceFactor(improvementData.cost, player);
+                __result = num;
             }
             catch (Exception ex)
             {
                 Loader.modLogger?.LogError($"[Conquest-AI] Error in AddPossibleImprovementCommands_Prefix: {ex}");
-                return true; 
             }
-        }*/
+        }  
     }
 }

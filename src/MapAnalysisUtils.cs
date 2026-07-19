@@ -112,7 +112,7 @@ namespace PolyMode
                             {
                                 continue;
                             }
-                            
+
                             if (areaTile.owner != currentOwner.Id) 
                             {
                                 enemyCityCount++; 

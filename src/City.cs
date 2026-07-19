@@ -87,7 +87,7 @@ namespace PolyMode
                 2 => EnumCache<CityReward>.GetType("two"),
                 3 => EnumCache<CityReward>.GetType("three"),
                 //4 => EnumCache<CityReward>.GetType("four"),
-                _ => CityReward.None
+                _ => CityReward.SuperUnit
             };
 
             CityReward[] newRewards = new CityReward[]
@@ -293,8 +293,9 @@ namespace PolyMode
                     if (tile.improvement.HasReward(EnumCache<CityReward>.GetType("three")))
                     {
                         __result *= 3;
+                        __result = Math.Min(__result, 30);
                         
-                        Loader.modLogger?.LogInfo($"[Conquest-City] Work (B) successfully updated to: {__result}");
+                        // Loader.modLogger?.LogInfo($"[Conquest-City] Work (B) successfully updated to: {__result}");
                     }
                 }
             }
@@ -302,7 +303,7 @@ namespace PolyMode
             {
                 Loader.modLogger?.LogError($"[Conquest-City] Error in CalculateWork: {ex.Message}");
             }
-        }      
+        }    
 
         /*[HarmonyPostfix]
         [HarmonyPatch(typeof(CityStatusNameContainer), nameof(CityStatusNameContainer.SetCity))]

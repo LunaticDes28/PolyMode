@@ -419,8 +419,8 @@ namespace PolyMode
                     }
                 }
 
-                ActionUtils.RuleArea(state, player, tile, false);
-                ActionUtils.ExploreFromTile(state, player, tile, 2, false);
+                ActionUtils.RuleArea(state, player, tile, true);
+                ActionUtils.ExploreFromTile(state, player, tile, 2, true);
 
                 Loader.modLogger?.LogInfo($"[Conquest-Match] City initialized for Player {player.Id} at {tile.coordinates}.");
             }
@@ -442,6 +442,12 @@ namespace PolyMode
                 __result = false;
                 return;
             }
+
+			if (improvement.HasAbility(ImprovementAbility.Type.Limited) && __instance.HasImprovementWithinCityBorders(gameState.Map, tile.rulingCityCoordinates, improvement.type))
+			{
+                __result = false;
+				return;
+			}
 
             try
             {
@@ -586,7 +592,7 @@ namespace PolyMode
 
                     TileData cityTile = GameManager.GameState.Map.GetTile(tile.rulingCityCoordinates);
                     int area = cityTile.improvement.borderSize;
-                    ActionUtils.ExploreFromTile(gameState, playerState, tile, area, false);
+                    ActionUtils.ExploreFromTile(gameState, playerState, tile, area, true);
                     
                     TileData[] areaSorted = gameState.Map.GetAreaSorted(tile.coordinates, area, true, true);
                     if (areaSorted != null && areaSorted.Length > 0)
@@ -1087,8 +1093,10 @@ namespace PolyMode
 
                         territoryTile.owner = 0;
                         territoryTile.rulingCityCoordinates = WorldCoordinates.NULL_COORDINATES; 
-                        // territoryTile.improvement = new ImprovementState { type = ImprovementData.Type.None };
-                        territoryTile.improvement = null;
+                        if (territoryTile != null && territoryTile.improvement != null && territoryTile.improvement.type != ImprovementData.Type.LightHouse)
+                        {
+                            territoryTile.improvement = null;
+                        }
                     }
                 }
             }
