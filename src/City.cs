@@ -342,11 +342,10 @@ namespace PolyMode
                 return;
             }
 
-            Loader.modLogger?.LogInfo($"[Conquest-Reward] Running reward {__instance.Reward}");
+            // Loader.modLogger?.LogInfo($"[Conquest-Reward] Running reward {__instance.Reward}");
 
             if (__instance.Reward == EnumCache<CityReward>.GetType("evacuation"))
             {
-                Loader.modLogger?.LogInfo($"[Conquest-Reward] Running custom evacuation");
                 Main.DestroyCityConquest(state, tile, playerState, true);
             }
             else

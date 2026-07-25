@@ -73,13 +73,13 @@ namespace PolyMode
             // Extra hate for players with more owned cities than avg
             float cityAdvantage = opponent.GetCityAdvantage(gameState);
             float hate = cityAdvantage * 1f;
-            Loader.modLogger?.LogInfo($"City advantage of player {opponent.Id} = {cityAdvantage}");
+            // Loader.modLogger?.LogInfo($"City advantage of player {opponent.Id} = {cityAdvantage}");
 
             if (cityAdvantage > 0)
             {
                 OpinionState opinionState = new OpinionState();
-                opinionState.AddOpinion((float)(hate * 2.2), EnumCache<OpinionManager.Type>.GetType("hegemon"));
-                opinionState.AddOpinion((float)(hate * 1.4), OpinionManager.Type.Winning);
+                opinionState.AddOpinion((float)(hate * 2.5), EnumCache<OpinionManager.Type>.GetType("hegemon"));
+                opinionState.AddOpinion((float)(hate * 1.5), OpinionManager.Type.Winning);
 
                 if (!__instance.Opinions.ContainsKey(opponent.Id))
                 {
@@ -88,8 +88,8 @@ namespace PolyMode
                 __instance.Opinions[opponent.Id].AddOpinion(opinionState.GetOpinion(OpinionManager.Type.Winning) * -1f, OpinionManager.Type.Winning);
                 __instance.Opinions[opponent.Id].AddOpinion(opinionState.GetOpinion(EnumCache<OpinionManager.Type>.GetType("hegemon")) * -1f, EnumCache<OpinionManager.Type>.GetType("hegemon"));
 
-                Loader.modLogger?.LogInfo($"Dominating opinion to player {opponent.Id} = {__instance.Opinions[opponent.Id].GetOpinion(OpinionManager.Type.Winning)}");
-                Loader.modLogger?.LogInfo($"Hegemon opinion to player {opponent.Id} = {__instance.Opinions[opponent.Id].GetOpinion(EnumCache<OpinionManager.Type>.GetType("hegemon"))}");
+                // Loader.modLogger?.LogInfo($"Dominating opinion to player {opponent.Id} = {__instance.Opinions[opponent.Id].GetOpinion(OpinionManager.Type.Winning)}");
+                // Loader.modLogger?.LogInfo($"Hegemon opinion to player {opponent.Id} = {__instance.Opinions[opponent.Id].GetOpinion(EnumCache<OpinionManager.Type>.GetType("hegemon"))}");
             }
         }
 
@@ -105,8 +105,8 @@ namespace PolyMode
 
             if (cityAdv > 0f)
             {
-                __result += cityAdv * 5f;
-                Loader.modLogger?.LogInfo($"Battle hostility to player {defendingTile.owner} = {__result}");
+                __result += cityAdv * 3f;
+                // Loader.modLogger?.LogInfo($"Battle hostility to player {defendingTile.owner} = {__result}");
             }
         }
 
@@ -222,7 +222,7 @@ namespace PolyMode
                 if (centerResult != null && centerResult.EnemyCityCount >= 2 && centerResult.EnemyCityCount - centerResult.OwnedCityCount >= 2)
                 {
                     Loader.modLogger?.LogInfo(
-                    $"[Conquest-Evacuation] City at location ({tile.coordinates.X}, {tile.coordinates.Y}) unfavorable. " +
+                    $"[Conquest-Evacuation] City at location ({tile.coordinates.X}, {tile.coordinates.Y}) is isolated. " +
                     $"(Enemies: {centerResult.EnemyCityCount}, Allies: {centerResult.OwnedCityCount}, Gap: {centerResult.EnemyCityCount - centerResult.OwnedCityCount}). " +
                     $"Forcing Evacuation selection!");
 
@@ -268,7 +268,7 @@ namespace PolyMode
                 if (centerResult != null && centerResult.EnemyCityCount == 0 && playerState.cities >= 4)
                 {
                     Loader.modLogger?.LogInfo(
-                    $"[Conquest-Tax] City at location ({tile.coordinates.X}, {tile.coordinates.Y}) favourable. " +
+                    $"[Conquest-Tax] City at location ({tile.coordinates.X}, {tile.coordinates.Y}) is protected. " +
                     $"(Enemies: {centerResult.EnemyCityCount}). " +
                     $"Forcing Tax Reform selection!");
 
@@ -329,7 +329,6 @@ namespace PolyMode
                         {
                             float totalStrategicScore = 0f;
 
-                            // ---- 評估 A：微觀土地擴張可行性 (檢查法定 1 或 2 半徑內真正的無主土地) ----
                             WorldCoordinates centerCoord = new WorldCoordinates(tileData.coordinates.X, tileData.coordinates.Y);
                             TileData[] nearbyTiles = gameState.Map.GetAreaSorted(centerCoord, expansionRadius, true, true);
 
@@ -338,7 +337,6 @@ namespace PolyMode
                             {
                                 foreach (var tileInZone in nearbyTiles)
                                 {
-                                    // 判定是否為未被任何城市統治、此座城堡蓋下去實質可以打包帶走的無主格子
                                     if (tileInZone != null && (tileInZone.owner == 0))
                                     {
                                         unclaimedCount++;
@@ -348,7 +346,6 @@ namespace PolyMode
 
                             // MapAnalysisUtils.LogAnalysisResult(rulingCity, bestCornerResult, 5);
 
-                            // 根據範圍內「實質能吞併」的土地數量給予擴張分數
                             if (unclaimedCount > 0)
                             {
                                 float expansionScore = unclaimedCount * 80f; 
@@ -359,22 +356,19 @@ namespace PolyMode
                                     $"Adding Expansion Score: +{expansionScore}");*/
                             }
 
-                            // ---- 評估 B：軍事威脅度 (從 4 格宏觀結果中直接累加) ----
                             if (bestCornerResult.EnemyCityCount > 0 || bestCornerResult.OwnedCityCount > 0)
                             {
                                 float militaryScore = bestCornerResult.EnemyCityCount * 20f - bestCornerResult.OwnedCityCount * 10f; 
                                 totalStrategicScore += militaryScore;
 
-                                Loader.modLogger?.LogInfo(
+                                /*Loader.modLogger?.LogInfo(
                                     $"[AI-Tactics] Frontline Warning! Corner {bestCornerResult.TileTypeLabel} detected {bestCornerResult.EnemyCityCount} enemies within radius 5. " +
-                                    $"Adding Military Score: +{militaryScore}");
+                                    $"Adding Military Score: +{militaryScore}");*/
                             }
-                            // 分數匯流注入
                             num += totalStrategicScore;
                         }
                         else
                         {
-                            // 非最優前線點，砍分
                             num *= 0.1f;
                         }
                     }
