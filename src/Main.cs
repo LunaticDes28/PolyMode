@@ -1172,6 +1172,18 @@ namespace PolyMode
                 PlayerState topWinner = playersSortedByRank[0];
                 if (topWinner == null) return;
 
+                if (__instance.Settings.RulesGameMode == EnumCache<GameMode>.GetType("conquest"))
+                {
+                    int num = GameStateUtils.CountAlivePlayers(__instance); 
+
+                    if (num <= 1)
+                    {
+                        winner = topWinner;
+                        __result = true;
+                        return;
+                    }
+                }
+
                 if (__instance.Settings.RulesGameMode == EnumCache<GameMode>.GetType("reign"))
                 {
                     int num = GameStateUtils.CountAlivePlayers(__instance); 

@@ -26,13 +26,21 @@
     "tooltip_ability_watercitadel": {
 		"English": "Allows Citadel to be built on Water and provides defence bonus"
 	},     
-    "wcontroller_reward_one": {
+    "wcontroller_reward_evacuation": {
         "English": "Evacuation"
     },    
-    "wcontroller_reward_two": {
+    "wcontroller_reward_valhalla": {
         "English": "Valhalla"
     },    
-    "wcontroller_reward_three": {
+    "wcontroller_reward_taxreform": {
         "English": "Tax Reform"
+    },
+    "opinion_reason_hegemon": {
+        "en": "hegemon",
+        "->": ""
+      },
+      "opinion_reason_hegemon_description": {
+        "en": "Your empire rules many cities.",
+        "->": ""
     }
 }

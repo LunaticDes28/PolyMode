@@ -1,5 +1,3 @@
-using System;
-using BepInEx.Logging;
 using HarmonyLib;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using Il2CppSystem.Collections.Generic;
@@ -8,15 +6,145 @@ using Polytopia.Data;
 using PolytopiaBackendBase.Game;
 using PolytopiaBackendBase.Common;
 using UnityEngine;
+using Il2CppSystem.Linq;
 
 namespace PolyMode
 {
     public static class City
     {
+        public class CityRequirement
+        {
+            public int level { get; set; }
+            public bool notCapital { get; set; }
+        }
+
+        public class CityRewardExtensions
+        {
+            public string? id { get; set; }
+            public System.Collections.Generic.List<CityRequirement>? cityRequirements { get; set; }
+        }
+
+        public static class CityRewardExtensionsManager
+        {
+            public static System.Collections.Generic.Dictionary<string, CityRewardExtensions> CustomExtensions = new System.Collections.Generic.Dictionary<string, CityRewardExtensions>();
+            public static void RegisterFromJObject(JObject patch)
+            {
+                try
+                {
+                    if (patch == null || patch["cityReward"] == null) return;
+                    Loader.modLogger?.LogInfo($"[Conquest-Hook] Successfully dynamic-mapped cityReward");
+
+                    var cityRewardNode = patch["cityReward"];
+                    Loader.modLogger?.LogInfo($"[Conquest-Hook] Raw node type: {cityRewardNode?.GetType()?.Name}");
+
+                    JObject? jObj = cityRewardNode.Cast<JObject>();
+                    if (jObj != null)
+                    {
+                        Loader.modLogger?.LogInfo($"[Conquest-Hook] node conversion success, item count: {jObj.Count}");
+                        JProperty[] properties = jObj.Properties().ToArray();
+
+                        for (int i = 0; i < properties.Length; i++)
+                        {
+                            JProperty property = properties[i];
+                            if (property == null) continue;
+
+                            string id = property.Name;
+                            JToken rewardData = property.Value;
+                            Loader.modLogger?.LogInfo($"[Conquest-Hook] Successfully dynamic-mapped ID {id}");
+
+                            if (rewardData == null) continue;
+                            Loader.modLogger?.LogInfo($"[Conquest-Hook] cityReward not null");
+
+                            CityRewardExtensions extension = new CityRewardExtensions();
+                            extension.cityRequirements = new System.Collections.Generic.List<CityRequirement>();
+
+                            Loader.modLogger?.LogInfo($"[Conquest-Hook] CityRequirement initialized");
+
+                            var reqToken = rewardData["cityRequirements"] ?? rewardData["CityRequirements"];
+
+                            if (reqToken != null && reqToken.Type == JTokenType.Array)
+                            {
+                                Loader.modLogger?.LogInfo($"[Conquest-Hook] Found cityRequirements token {reqToken}");
+
+                                JArray reqArray = reqToken.Cast<JArray>();
+                                Loader.modLogger?.LogInfo($"[Conquest-Hook] Found cityRequirements array with {reqArray.Count} items");
+
+                                for (int j = 0; j < reqArray.Count; j++)
+                                {
+                                    JToken item = reqArray[j];
+                                    if (item == null) continue;
+
+                                    int reqLevel = 0;
+                                    bool reqNotCapital = false;
+                                    
+                                    if (item["level"] != null)
+                                    {
+                                        string levelStr = item["level"].ToString();
+                                        int.TryParse(levelStr, out reqLevel);
+                                    }
+
+                                    if (item["notCapital"] != null)
+                                    {
+                                        string capStr = item["notCapital"].ToString();
+                                        bool.TryParse(capStr, out reqNotCapital);
+                                    }
+
+                                    CityRequirement req = new CityRequirement
+                                    {
+                                        level = reqLevel,
+                                        notCapital = reqNotCapital
+                                    };
+                                    extension.cityRequirements.Add(req);
+                                    Loader.modLogger?.LogInfo($"[Conquest-Hook] Parsed req -> level: {reqLevel}, notCapital: {reqNotCapital}");
+                                }
+                            }
+
+                            if (extension != null)
+                            {
+                                extension.id = id;
+                                CustomExtensions[id] = extension;
+
+                                Loader.modLogger?.LogInfo($"[Conquest-Hook] Successfully dynamic-mapped reward via JObject: '{id}' to Enum ID: {extension.id}");
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Loader.modLogger?.LogError($"[Conquest-Hook] Error mapping cityReward from JObject: {ex}");
+                }
+            }
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(PolyMod.Loader), nameof(PolyMod.Loader.LoadGameLogicDataPatch))]
+        public static void CityRewardPatch_ThirdOption(Mod mod, JObject gld, JObject patch)
+        {
+            try
+            {
+                if (patch != null)
+                {
+                    Loader.modLogger?.LogInfo($"[Conquest-Hook] Dependency finished loading patch for {mod?.id}. Intercepting cityReward...");
+                    
+                    CityRewardExtensionsManager.RegisterFromJObject(patch);
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest-Hook] Critical error in LoadGameLogicDataPatch Prefix: {ex}");
+            }
+        }
+        
         [HarmonyPrefix]
         [HarmonyPatch(typeof(CommandTriggerUIUtils), nameof(CommandTriggerUIUtils.ShowCommandTrigger))]
         public static bool ShowCommandTrigger_ThirdOption(CommandTrigger commandTrigger)
         {
+            if (GameManager.GameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                && GameManager.GameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+            {
+                return true;
+            }
+
             PlayerState playerState;
             GameManager.GameState.TryGetPlayer(GameManager.GameState.CurrentPlayer, out playerState);
             CommandTriggerType type = commandTrigger.type;
@@ -38,66 +166,145 @@ namespace PolyMode
             {
                 return false;
             }
-            if (tile.capitalOf != 0)
-            {
-                if (tile.improvement.level == 2)
-                {
-                    CityReward[] cityRewardsForLevel = new CityReward[]
-                    {
-                        CityRewardData.cityRewards[0],
-                        CityRewardData.cityRewards[1],
-                    };
-                    rewardPopup.SetData(playerState, tile, cityRewardsForLevel, RewardPopup.PopupType.CityLevelUp, false);
-                    rewardPopup.Show();
-                    AudioManager.PlaySFX(SFXTypes.RewardStart, 0, 1f, 1f, 0f);
-                    return false;
-                }
-                else
-                {
-                    CityReward[] cityRewardsForLevel = global::ImprovementDataExtensions.GetCityRewardsForLevel(improvementData, (int)(tile.improvement.level - 1));
-                    rewardPopup.SetData(playerState, tile, cityRewardsForLevel, RewardPopup.PopupType.CityLevelUp, false);
-                    rewardPopup.Show();
-                    AudioManager.PlaySFX(SFXTypes.RewardStart, 0, 1f, 1f, 0f);
-                    return false;
-                }
-            }
-            else
-            {
-                CityReward[] cityRewardsForLevel = global::ImprovementDataExtensions.GetCityRewardsForLevel(improvementData, (int)(tile.improvement.level - 1));
-                rewardPopup.SetData(playerState, tile, cityRewardsForLevel, RewardPopup.PopupType.CityLevelUp, false);
-                rewardPopup.Show();
-                AudioManager.PlaySFX(SFXTypes.RewardStart, 0, 1f, 1f, 0f);
-                return false;
-            }       
+
+            CityReward[] allRewards = ImprovementDataExtensions.GetCityRewardsForLevel(improvementData, tile.improvement.level - 1);
+
+            CityReward[] notMyRewards = allRewards
+                .Where(reward => !CityRewardExtensionsManager.CustomExtensions.ContainsKey(reward.GetName()))
+                .ToArray();
+
+            CityReward[] myModRewards = GetCustomCityRewards(tile);
+
+            CityReward[] cityRewardsForLevel = notMyRewards
+                .Concat(myModRewards)
+                .Distinct()
+                .ToArray();
+            
+            // CityReward[] cityRewardsForLevel = GetCustomCityRewards(tile);
+            rewardPopup.SetData(playerState, tile, cityRewardsForLevel, RewardPopup.PopupType.CityLevelUp, false);
+            rewardPopup.Show();
+            AudioManager.PlaySFX(SFXTypes.RewardStart, 0, 1f, 1f, 0f);
+            return false;
         }
 
         [HarmonyPostfix]
         [HarmonyPatch(typeof(ImprovementDataExtensions), nameof(ImprovementDataExtensions.GetCityRewardsForLevel))]
         public static void GetCityRewardsForLevel_ThirdOption(ref Il2CppStructArray<CityReward> __result, ImprovementData data, int level)
         {
-            if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
-                && GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+            if (level == 1)
             {
-                return;
+                __result = new CityReward[]
+                {
+                CityReward.Explorer,
+                CityReward.Workshop,
+                EnumCache<CityReward>.GetType("evacuation")
+                };
             }
-            int num = Math.Min(level - 1, (CityRewardData.cityRewards.Length / 2) - 1) * 2;
-            CityReward customReward = level switch
+            else
+            if (level == 2)
             {
-                1 => EnumCache<CityReward>.GetType("one"),
-                2 => EnumCache<CityReward>.GetType("two"),
-                3 => EnumCache<CityReward>.GetType("three"),
-                //4 => EnumCache<CityReward>.GetType("four"),
-                _ => CityReward.SuperUnit
-            };
-
-            CityReward[] newRewards = new CityReward[]
+                __result = new CityReward[]
+                {
+                CityReward.CityWall,
+                CityReward.Resources,
+                EnumCache<CityReward>.GetType("valhalla")
+                };
+            }
+            else
+            if (level == 3)
             {
-                CityRewardData.cityRewards[num],
-                CityRewardData.cityRewards[num + 1],
-                customReward
-            };
+                __result = new CityReward[]
+                {
+                CityReward.BorderGrowth,
+                CityReward.PopulationGrowth,
+                EnumCache<CityReward>.GetType("taxreform")
+                };
+            }
+            else
+            if (level >= 4)
+            {
+                __result = new CityReward[]
+                {
+                CityReward.Park,
+                CityReward.SuperUnit,
+                };
+            }
+        }
 
-            __result = newRewards;
+        public static CityReward[] GetCustomCityRewards(TileData tile)
+        {
+            if (tile == null || tile.improvement == null)
+            {
+                Loader.modLogger?.LogWarning("[Conquest-Reward] GetCustomCityRewards received a null tile or improvement.");
+                return Array.Empty<CityReward>();
+            }
+
+            Il2CppSystem.Collections.Generic.List<CityReward> list = new Il2CppSystem.Collections.Generic.List<CityReward>();
+
+            CityReward[] rewards = (CityReward[])Enum.GetValues(typeof(CityReward));
+            Loader.modLogger?.LogInfo($"Enum count: {rewards.Length}");
+            
+            foreach (var kvp in CityRewardExtensionsManager.CustomExtensions)
+            {
+                CityReward customReward = EnumCache<CityReward>.GetType(kvp.Key); 
+                CityRewardExtensions extension = kvp.Value;
+
+                if (extension != null && extension.cityRequirements != null)
+                {
+                    Loader.modLogger?.LogInfo($"[Conquest-Reward] Evaluating Registered Reward: {kvp.Key} (True Enum ID: {(int)customReward})");
+
+                    bool meetsRequirements = false;
+
+                    foreach (var req in extension.cityRequirements)
+                    {
+                        Loader.modLogger?.LogInfo($"LReq: {req.level}");
+                        Loader.modLogger?.LogInfo($"CReq: {req.notCapital}");
+
+                        bool levelMatch = tile.improvement.level == req.level + 1;
+
+                        bool capitalMatch = !req.notCapital || tile.capitalOf == 0;
+
+                        Loader.modLogger?.LogInfo($"Level: {levelMatch}");
+                        Loader.modLogger?.LogInfo($"Capital: {capitalMatch}");
+
+
+                        if (levelMatch && capitalMatch)
+                        {
+                            meetsRequirements = true;
+                            break;
+                        }
+                    }
+
+                    if (meetsRequirements && !list.Contains(customReward))
+                    {
+                        list.Add(customReward);
+                        Loader.modLogger?.LogInfo($"[Conquest-Reward] City meets extension criteria. Added custom reward ID: {kvp.Key}");
+                    }
+                }
+            }
+
+            return list.ToArray();
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(UIIconData), nameof(UIIconData.GetSprite))]
+        public static void Override(UIIconData __instance, ref Sprite __result, string id)
+        {
+            if (!isCustomReward(id))
+                return;
+
+            CityReward rewardType = getEnum(id);
+            string? spriteName = EnumCache<CityReward>.GetName(rewardType);
+
+            if (string.IsNullOrEmpty(spriteName))
+                return;
+
+            Sprite? sprite = Registry.GetSprite(spriteName, "", 0);
+            
+            if (sprite != null)
+            {
+                __result = sprite;
+            }
         }
 
         public static bool isCustomReward(string s)
@@ -119,26 +326,6 @@ namespace PolyMode
             return (CityReward)int.Parse(s.Split("_")[2]);
         }
 
-        [HarmonyPostfix]
-        [HarmonyPatch(typeof(UIIconData), "GetSprite")]
-        public static void Override(UIIconData __instance, ref Sprite __result, string id)
-        {
-            if (!isCustomReward(id))
-                return;
-
-            CityReward rewardType = getEnum(id);
-            string? spriteName = EnumCache<CityReward>.GetName(rewardType);
-
-            if (string.IsNullOrEmpty(spriteName))
-                return;
-
-            Sprite? sprite = Registry.GetSprite(spriteName, "", 0);
-            
-            if (sprite != null)
-            {
-                __result = sprite;
-            }
-        }
 
         [HarmonyPostfix]
         [HarmonyPatch(typeof(CityRewardAction), nameof(CityRewardAction.Execute))]
@@ -155,30 +342,24 @@ namespace PolyMode
                 return;
             }
 
-            if (__instance.Reward == EnumCache<CityReward>.GetType("one"))
+            Loader.modLogger?.LogInfo($"[Conquest-Reward] Running reward {__instance.Reward}");
+
+            if (__instance.Reward == EnumCache<CityReward>.GetType("evacuation"))
             {
+                Loader.modLogger?.LogInfo($"[Conquest-Reward] Running custom evacuation");
                 Main.DestroyCityConquest(state, tile, playerState, true);
             }
             else
             {
-                if (__instance.Reward == EnumCache<CityReward>.GetType("two"))
+                if (__instance.Reward == EnumCache<CityReward>.GetType("valhalla"))
                 {
                     return;
                 }
-                if (__instance.Reward == EnumCache<CityReward>.GetType("three"))
-                {
-                    return;
-                }
-                else if (__instance.Reward == EnumCache<CityReward>.GetType("four"))
+                if (__instance.Reward == EnumCache<CityReward>.GetType("taxreform"))
                 {
                     return;
                 }
             }
-        }
-
-        public static CityReward[] GetRewardsForLevel(ImprovementData data, int level)
-        {
-            return data.GetCityRewardsForLevel(level);
         }
 
         // =========================================================================
@@ -193,9 +374,9 @@ namespace PolyMode
                 return;
             }
             var a = GameManager.GameState.Map.GetTile(__instance.Coordinates);
-            bool hasTwo = a.improvement.HasReward(EnumCache<CityReward>.GetType("two"));
+            bool hasVal = a.improvement.HasReward(EnumCache<CityReward>.GetType("valhalla"));
 
-            if (hasTwo)
+            if (hasVal)
             {
                 PolytopiaBackendBase.Common.TribeType tribe = __instance.Tribe;
                 PolytopiaBackendBase.Common.SkinType skinType = __instance.SkinType;
@@ -239,7 +420,7 @@ namespace PolyMode
 
                 if (tile != null && tile.improvement != null && tile.improvement.type == ImprovementData.Type.City)
                 {
-                    if (tile.improvement.HasReward(EnumCache<CityReward>.GetType("two")))
+                    if (tile.improvement.HasReward(EnumCache<CityReward>.GetType("valhalla")))
                     {
                         __result.xp += 2;
                         
@@ -266,7 +447,7 @@ namespace PolyMode
 
                 if (tile != null && tile.improvement != null && tile.improvement.type == ImprovementData.Type.City)
                 {
-                    if (tile.improvement.HasReward(EnumCache<CityReward>.GetType("three")))
+                    if (tile.improvement.HasReward(EnumCache<CityReward>.GetType("taxreform")))
                     {
                         __result *= 3;
                         
@@ -290,7 +471,7 @@ namespace PolyMode
 
                 if (tile != null && tile.improvement != null && tile.improvement.type == ImprovementData.Type.City)
                 {
-                    if (tile.improvement.HasReward(EnumCache<CityReward>.GetType("three")))
+                    if (tile.improvement.HasReward(EnumCache<CityReward>.GetType("taxreform")))
                     {
                         __result *= 3;
                         __result = Math.Min(__result, 30);
@@ -311,7 +492,7 @@ namespace PolyMode
         {
             if (__instance.workContainer != null && __instance.workContainer.gameObject.activeSelf && __instance.workIcon != null)
             {
-                __instance.workIcon.sprite = PolyMod.Registry.GetSprite("three"); 
+                __instance.workIcon.sprite = PolyMod.Registry.GetSprite("taxreform"); 
 
                 __instance.UpdateSize();
             }
@@ -326,7 +507,7 @@ namespace PolyMode
                 return;
             }
 
-            if (!tile.improvement.HasReward(EnumCache<CityReward>.GetType("three")))
+            if (!tile.improvement.HasReward(EnumCache<CityReward>.GetType("taxreform")))
             {
                 return;
             }
@@ -350,17 +531,15 @@ namespace PolyMode
                     return;
                 }
 
+                PlayerState playerState;
+                GameManager.GameState.TryGetPlayer(__instance.action.PlayerId, out playerState);
+
                 Loader.modLogger?.LogInfo("[Conquest-City] CityRewardReaction Postfix processing visuals.");
 
                 TileData tile = GameManager.GameState.Map.GetTile(__instance.action.Coordinates);
                 if (tile == null) return;
 
                 Tile instance = tile.GetInstance();
-
-                /*if (instance != null)
-                {
-                    ReactionUtils.UpdateSurroundingBordersAndTransportPaths(__instance.action.PlayerId, tile);
-                }*/
 
                 Il2CppReferenceArray<TileData> areaSorted = GameManager.GameState.Map.GetAreaSorted(tile.coordinates, 3, true, true);
                 if (areaSorted != null)

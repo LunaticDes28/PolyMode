@@ -108,17 +108,37 @@
 			"idx": -1
 		}
 	},
-	"conquest": {
-        "one":{
-            "idx": -1
-        },
-        "two":{
-            "idx": -1
-        },
-        "three":{
-            "idx": -1
-        },
-        "four":{
+	"cityReward": {
+		"evacuation": {
+			"idx": -1,
+			"cityRequirements": [
+				{
+					"level": 1,
+					"notCapital": true
+				}
+			]
+		},
+		"valhalla": {
+			"idx": -1,
+			"cityRequirements": [
+				{
+					"level": 2,
+					"notCapital": false
+				}
+			]
+		},
+		"taxreform": {
+			"idx": -1,
+			"cityRequirements": [
+				{
+					"level": 3,
+					"notCapital": false
+				}
+			]
+		}
+	},
+	"opinion": {
+        "hegemon":{
             "idx": -1
         }
     }
