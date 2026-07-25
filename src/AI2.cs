@@ -72,22 +72,25 @@ namespace PolyMode
 
             // Extra hate for players with more owned cities than avg
             float cityAdvantage = opponent.GetCityAdvantage(gameState);
-            float hate = cityAdvantage * 2f;
+            float hate = cityAdvantage * 1f;
             Loader.modLogger?.LogInfo($"City advantage of player {opponent.Id} = {cityAdvantage}");
 
-            OpinionState opinionState = new OpinionState();
-            opinionState.AddOpinion((float)(hate * 5), EnumCache<OpinionManager.Type>.GetType("hegemon"));
-            opinionState.AddOpinion((float)(hate * 2), OpinionManager.Type.Winning);
-
-            if (!__instance.Opinions.ContainsKey(opponent.Id))
+            if (cityAdvantage > 0)
             {
-                __instance.Opinions[opponent.Id] = new OpinionState();
-            }
-            __instance.Opinions[opponent.Id].AddOpinion(opinionState.GetOpinion(OpinionManager.Type.Winning) * -1f, OpinionManager.Type.Winning);
-            __instance.Opinions[opponent.Id].AddOpinion(opinionState.GetOpinion(EnumCache<OpinionManager.Type>.GetType("hegemon")) * -1f, EnumCache<OpinionManager.Type>.GetType("hegemon"));
+                OpinionState opinionState = new OpinionState();
+                opinionState.AddOpinion((float)(hate * 2.7), EnumCache<OpinionManager.Type>.GetType("hegemon"));
+                opinionState.AddOpinion((float)(hate * 1.8), OpinionManager.Type.Winning);
 
-            Loader.modLogger?.LogInfo($"Dominating opinion to player {opponent.Id} = {__instance.Opinions[opponent.Id].GetOpinion(OpinionManager.Type.Winning)}");
-            Loader.modLogger?.LogInfo($"Hegemon opinion to player {opponent.Id} = {__instance.Opinions[opponent.Id].GetOpinion(EnumCache<OpinionManager.Type>.GetType("hegemon"))}");
+                if (!__instance.Opinions.ContainsKey(opponent.Id))
+                {
+                    __instance.Opinions[opponent.Id] = new OpinionState();
+                }
+                __instance.Opinions[opponent.Id].AddOpinion(opinionState.GetOpinion(OpinionManager.Type.Winning) * -1f, OpinionManager.Type.Winning);
+                __instance.Opinions[opponent.Id].AddOpinion(opinionState.GetOpinion(EnumCache<OpinionManager.Type>.GetType("hegemon")) * -1f, EnumCache<OpinionManager.Type>.GetType("hegemon"));
+
+                Loader.modLogger?.LogInfo($"Dominating opinion to player {opponent.Id} = {__instance.Opinions[opponent.Id].GetOpinion(OpinionManager.Type.Winning)}");
+                Loader.modLogger?.LogInfo($"Hegemon opinion to player {opponent.Id} = {__instance.Opinions[opponent.Id].GetOpinion(EnumCache<OpinionManager.Type>.GetType("hegemon"))}");
+            }
         }
 
         // 1. Boost attack score against rich players
