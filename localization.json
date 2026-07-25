@@ -36,11 +36,9 @@
         "English": "Tax Reform"
     },
     "opinion_reason_hegemon": {
-        "en": "hegemon",
-        "->": ""
+        "English": "hegemon"
       },
       "opinion_reason_hegemon_description": {
-        "en": "Your empire rules many cities.",
-        "->": ""
+        "English": "Your empire rules many cities."
     }
 }
