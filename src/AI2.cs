@@ -78,8 +78,8 @@ namespace PolyMode
             if (cityAdvantage > 0)
             {
                 OpinionState opinionState = new OpinionState();
-                opinionState.AddOpinion((float)(hate * 2.5), EnumCache<OpinionManager.Type>.GetType("hegemon"));
-                opinionState.AddOpinion((float)(hate * 1.5), OpinionManager.Type.Winning);
+                opinionState.AddOpinion((float)(hate * 2.3), EnumCache<OpinionManager.Type>.GetType("hegemon"));
+                opinionState.AddOpinion((float)(hate * 1.2), OpinionManager.Type.Winning);
 
                 if (!__instance.Opinions.ContainsKey(opponent.Id))
                 {

@@ -769,6 +769,7 @@ namespace PolyMode
         }*/
 
         [HarmonyPostfix]
+        [HarmonyPriority(Priority.Last)]
         [HarmonyPatch(typeof(CommandUtils), nameof(CommandUtils.GetTrainableUnits))]
         private static void GetTrainableUnits_Citadel(GameState gameState, PlayerState player, TileData tile, ref Il2CppSystem.Collections.Generic.List<TrainCommand> __result, bool includeUnavailable = false)
         {
