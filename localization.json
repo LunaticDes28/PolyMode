@@ -35,10 +35,10 @@
     "wcontroller_reward_taxreform": {
         "English": "Tax Reform"
     },
-    "opinion_reason_hegemon": {
-        "English": "hegemon"
+    "opinion_reason_hegemonic": {
+        "English": "hegemonic"
       },
-      "opinion_reason_hegemon_description": {
+      "opinion_reason_hegemonic_description": {
         "English": "Your empire rules many cities."
     }
 }

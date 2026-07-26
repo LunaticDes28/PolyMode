@@ -4,7 +4,7 @@ using PolytopiaBackendBase.Game;
 
 namespace PolyMode
 {
-    public static class AI2
+    public static class AI_2
     {
         // =========================================================================
         // A. Diplomacy Behaviors
@@ -49,6 +49,11 @@ namespace PolyMode
         [HarmonyPatch(typeof(OpinionManager), nameof(OpinionManager.UpdateOpinion))]
         private static void UpdateOpinion_Cities(OpinionManager __instance, GameState gameState, PlayerState player, PlayerState opponent)
         {
+            if (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+            {
+                return;
+            }
             if (player == opponent)
             {
                 return;
@@ -78,7 +83,7 @@ namespace PolyMode
             if (cityAdvantage > 0)
             {
                 OpinionState opinionState = new OpinionState();
-                opinionState.AddOpinion((float)(hate * 2.3), EnumCache<OpinionManager.Type>.GetType("hegemon"));
+                opinionState.AddOpinion((float)(hate * 2.3), EnumCache<OpinionManager.Type>.GetType("hegemonic"));
                 opinionState.AddOpinion((float)(hate * 1.2), OpinionManager.Type.Winning);
 
                 if (!__instance.Opinions.ContainsKey(opponent.Id))
@@ -86,10 +91,10 @@ namespace PolyMode
                     __instance.Opinions[opponent.Id] = new OpinionState();
                 }
                 __instance.Opinions[opponent.Id].AddOpinion(opinionState.GetOpinion(OpinionManager.Type.Winning) * -1f, OpinionManager.Type.Winning);
-                __instance.Opinions[opponent.Id].AddOpinion(opinionState.GetOpinion(EnumCache<OpinionManager.Type>.GetType("hegemon")) * -1f, EnumCache<OpinionManager.Type>.GetType("hegemon"));
+                __instance.Opinions[opponent.Id].AddOpinion(opinionState.GetOpinion(EnumCache<OpinionManager.Type>.GetType("hegemonic")) * -1f, EnumCache<OpinionManager.Type>.GetType("hegemonic"));
 
                 // Loader.modLogger?.LogInfo($"Dominating opinion to player {opponent.Id} = {__instance.Opinions[opponent.Id].GetOpinion(OpinionManager.Type.Winning)}");
-                // Loader.modLogger?.LogInfo($"Hegemon opinion to player {opponent.Id} = {__instance.Opinions[opponent.Id].GetOpinion(EnumCache<OpinionManager.Type>.GetType("hegemon"))}");
+                // Loader.modLogger?.LogInfo($"hegemonic opinion to player {opponent.Id} = {__instance.Opinions[opponent.Id].GetOpinion(EnumCache<OpinionManager.Type>.GetType("hegemonic"))}");
             }
         }
 
@@ -98,6 +103,11 @@ namespace PolyMode
         [HarmonyPatch(typeof(AI), nameof(AI.RateBattle))]
         private static void RateBattle_Cities(GameState gameState, UnitState attackingUnit, TileData defendingTile, ref float __result)
         {
+            if (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+            {
+                return;
+            }
             if (defendingTile.owner == 0) return;
 
             float cityAdv = defendingTile.owner != 0 ? 
@@ -135,7 +145,7 @@ namespace PolyMode
             }
         }
 
-        // 3. Global aggression boost in AnalyzeSituation
+        // 3. Global aggression boost in AnalyzeSituation (NOT working)
         [HarmonyPostfix]
         [HarmonyPatch(typeof(AI), nameof(AI.AnalyzeSituation))]
         private static void AnalyzeSituation_Postfix(GameState gameState, PlayerState player)
@@ -216,8 +226,8 @@ namespace PolyMode
             }
             if (tile.improvement.level == 2)
             {
-                CityAnalysisResult? centerResult = MapAnalysisUtils.ScanCity(gameState.Map, gameState, tile, 3, true, playerState);
-                // MapAnalysisUtils.LogAnalysisResult(tile, centerResult, 3);
+                CityAnalysisResult? centerResult = MapAnalysis.ScanCity(gameState.Map, gameState, tile, 3, true, playerState);
+                // MapAnalysis.LogAnalysisResult(tile, centerResult, 3);
 
                 if (centerResult != null && centerResult.EnemyCityCount >= 2 && centerResult.EnemyCityCount - centerResult.OwnedCityCount >= 2)
                 {
@@ -262,8 +272,8 @@ namespace PolyMode
             else
             if (tile.improvement.level == 4)
             {
-                CityAnalysisResult? centerResult = MapAnalysisUtils.ScanCity(gameState.Map, gameState, tile, 8, true, playerState);
-                // MapAnalysisUtils.LogAnalysisResult(tile, centerResult, 8);
+                CityAnalysisResult? centerResult = MapAnalysis.ScanCity(gameState.Map, gameState, tile, 8, true, playerState);
+                // MapAnalysis.LogAnalysisResult(tile, centerResult, 8);
 
                 if (centerResult != null && centerResult.EnemyCityCount == 0 && playerState.cities >= 4)
                 {
@@ -309,7 +319,7 @@ namespace PolyMode
                 {
                     int expansionRadius = rulingCity.improvement.borderSize;
 
-                    CityAnalysisResult? bestCornerResult = MapAnalysisUtils.ScanCity(
+                    CityAnalysisResult? bestCornerResult = MapAnalysis.ScanCity(
                         gameState.Map,
                         gameState,
                         rulingCity,
@@ -344,7 +354,7 @@ namespace PolyMode
                                 }
                             }
 
-                            // MapAnalysisUtils.LogAnalysisResult(rulingCity, bestCornerResult, 5);
+                            // MapAnalysis.LogAnalysisResult(rulingCity, bestCornerResult, 5);
 
                             if (unclaimedCount > 0)
                             {

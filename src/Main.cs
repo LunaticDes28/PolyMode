@@ -472,19 +472,19 @@ namespace PolyMode
                     else
                     if (gameState.Settings.MapSize  <= 16)
                     {
-                        cityLimit = 1;
+                        cityLimit = 2;
                         capitalLimit = 2;
                     }
                     else
                     if (gameState.Settings.MapSize  <= 20)
                     {
-                        cityLimit = 2;
-                        capitalLimit = 2;
+                        cityLimit = 3;
+                        capitalLimit = 3;
                     }
                     else
                     {
-                        cityLimit = 3;
-                        capitalLimit = 3;
+                        cityLimit = 4;
+                        capitalLimit = 4;
                     }
 
                     if (tile.terrain == TerrainData.Type.Mountain && !playerState.HasAbility(EnumCache<PlayerAbility.Type>.GetType("mountaincitadel"), gameState))

@@ -3,6 +3,7 @@ using PolytopiaBackendBase.Game;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using Polytopia.Data;
+using Il2CppInterop.Runtime.InteropTypes.Arrays;
 
 namespace PolyMode
 {
@@ -12,7 +13,7 @@ namespace PolyMode
         public static bool IsReignSelected = false;
 
         // =========================================================================
-        // A. Pre Game Menu
+        // A. Game Setup Screen
         // =========================================================================
         [HarmonyPostfix]
         [HarmonyPatch(typeof(UIHorizontalListData), nameof(UIHorizontalListData.AddItem))]
@@ -101,7 +102,10 @@ namespace PolyMode
                 //GameSetupScreen a = new GameSetupScreen();
                 //a.gameModeInfoRow = null;
 
-                CreateOpponentsList(__instance);
+                if (GameManager.PreliminaryGameSettings.GameType == GameType.SinglePlayer)
+                {
+                    CreateOpponentsList(__instance);
+                }
             }
             catch (Exception ex)
             {
@@ -115,6 +119,11 @@ namespace PolyMode
         {
             try
             {
+                if (GameManager.PreliminaryGameSettings.GameType != GameType.SinglePlayer)
+                {
+                    return;
+                }
+
                 Loader.modLogger?.LogInfo($"OnShow memory selected Gamemode ID is {GameManager.PreliminaryGameSettings.RulesGameMode}");
 
                 if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")) return;
@@ -191,8 +200,236 @@ namespace PolyMode
         } 
         
         // =========================================================================
-        // B. Ingame Stats Screen
+        // B. Game Stats Screen
         // =========================================================================
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(GameStatsScreen), nameof(GameStatsScreen.Show))]
+        public static void Show_Reign(GameStatsScreen __instance, bool instant = false)
+        {
+            try
+            {
+                if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                {
+                    return;
+                }
+
+                if (__instance.GameSettings.RulesGameMode == EnumCache<GameMode>.GetType("reign"))
+                {
+                    __instance.scoreHeader.Key = "gamestatus.capitals";
+                }
+                __instance.PopulateScreen();
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest-Backend] GameStatsScreen Show error: {ex}");
+            } 
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(GameStatsScreen), nameof(GameStatsScreen.PopulateScreen))]
+        public static void PopulateScreen_Conquest(GameStatsScreen __instance)
+        {
+            try
+            {
+                if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("conquest"))
+                {
+                    return;
+                }
+
+                __instance.ClearStatsRows();
+                __instance.moreInfoButton.SetData(__instance.PrepareGameInfo());
+                __instance.PopulateStatsList();
+                __instance.PopulatePlayers();
+                __instance.PopulateTasks();
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest-Backend] GameStatsScreen PopulateScreen error: {ex}");
+            } 
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(GameStatsScreen), nameof(GameStatsScreen.GetDescription))]
+        public static void GetDescription_Reign(GameStatsScreen __instance, PlayerState player, int cityCount, string userName, ref string __result)
+        {
+            try
+            {
+                if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                {
+                    return;
+                }
+
+                bool isSpectating = GameManager.Client.IsSpectating;
+                bool flag = player == GameManager.LocalPlayer && !isSpectating;
+                bool autoPlay = player.AutoPlay;
+                bool flag2 = player.IsAlive(GameManager.GameState);
+                bool flag3 = flag || GameManager.LocalPlayer.KnowsPlayer(player.Id) || !flag2 || (isSpectating && GameManager.LocalPlayer.Id == player.Id) || !autoPlay;
+                string arg = string.Empty;
+
+                if (flag3)
+                {
+                    arg = Localization.Get("gamestatus.ruled", new Il2CppReferenceArray<Il2CppSystem.Object>(new[] { (Il2CppSystem.Object)userName }));
+                }
+                else
+                {
+                    arg = Localization.Get("gamestatus.unknown.ruler", new Il2CppReferenceArray<Il2CppSystem.Object>(0));
+                }
+                if (!flag2)
+                {
+                    __result = string.Format("{0}", arg);
+                }
+                __result = string.Format("{0}, {1}", arg, Localization.Get("gamestatus.score", (Il2CppReferenceArray<Il2CppSystem.Object>)(new[]
+                    {
+                        (Il2CppSystem.Object)LocalizationUtils.FormatNumber(player.score)
+                    })));
+                }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest-Backend] GameStatsScreen GetDescription error: {ex}");
+            } 
+        }
+
+        [HarmonyPrefix]
+        [HarmonyPatch(typeof(GameStatsScreen), nameof(GameStatsScreen.PopulatePlayers))]
+        public static bool PopulatePlayers_Reign(GameStatsScreen __instance)
+        {
+            try
+            {
+                if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                {
+                    return true;
+                }
+
+                Il2CppSystem.Collections.Generic.List<PlayerState> playersSortedByRank = GameManager.GameState.GetPlayersSortedByRank();
+                PlayerState localPlayer = GameManager.LocalPlayer;
+
+                foreach (PlayerState player in playersSortedByRank)
+                {
+                    player.opinions.UpdateOpinions(GameManager.GameState, player);
+                    if (player.Id != 255)
+                    {
+                        bool flag = player == localPlayer;
+                        bool autoPlay = player.AutoPlay;
+                        bool flag2 = player.IsAlive(GameManager.GameState);
+                        bool flag3 = flag || GameManager.LocalPlayer.KnowsPlayer(player.Id) || !flag2;
+
+                        StatsRowView row = __instance.CreateStatsRow(flag2 ? __instance.scoresList : __instance.deadScoresList);
+                        string statsName = string.Empty;
+
+                        // 1. 如果 player.AccountId 本身就不是 null，我們可以直接拿來用
+                        Il2CppSystem.Nullable<Il2CppSystem.Guid> friendIdParam;
+
+                        if (player.AccountId != null && player.AccountId.HasValue)
+                        {
+                            friendIdParam = player.AccountId;
+                        }
+                        else
+                        {
+                            // 2. 如果是 null，建立一個包含 Il2CppSystem.Guid.Empty 的新 Nullable 物件
+                            // 這是最安全的做法，完全避開與 .NET Guid 的型別混淆
+                            Il2CppSystem.Guid emptyGuid = default; 
+                            friendIdParam = new Il2CppSystem.Nullable<Il2CppSystem.Guid>(emptyGuid);
+                        }
+
+                        // 3. 成功傳入 FriendUtils
+                        string spriteStringForFriendIdWithFormat = FriendUtils.GetSpriteStringForFriendIdWithFormat(
+                            friendIdParam, 
+                            " <size=80%>{0}</size>"
+                        );
+                        PlayerData playerData;
+                        GameManager.Client.TryGetPlayerData(player.Id, out playerData);
+                        string userName = autoPlay ? string.Format("{0} ({1})", spriteStringForFriendIdWithFormat + playerData.GetPresentableName(25), Localization.Get("gamestatus.ruled.bot", new Il2CppReferenceArray<Il2CppSystem.Object>(0))) : (spriteStringForFriendIdWithFormat + playerData.GetPresentableName(25));
+
+                        /*row.button.enabled = true;
+                        row.OnClicked += delegate(int index, BaseEventData eventData)
+                        {
+                            PlayerInfoPopup playerInfoPopup = PopupManager.GetPlayerInfoPopup();
+                            playerInfoPopup.SetData(player);
+                            playerInfoPopup.Show(InputManager.GetInputPosition());
+                        };*/
+                        
+                        PlayerInfoIcon.LayoutInfo layoutInfo = new PlayerInfoIcon.LayoutInfo();
+                        layoutInfo.tribe = player.tribe;
+                        layoutInfo.skin = player.skinType;
+                        layoutInfo.mood = PlayerInfoIcon.Mood.DataBased;
+                        TribeData tribeData;
+                        GameManager.GameState.GameLogicData.TryGetData(player.tribe, out tribeData);
+                        layoutInfo.color = ColorUtil.ColorFromInt((int)tribeData.color);
+                        DiplomacyRelation relation = GameManager.LocalPlayer.GetRelation(player.Id);
+                        layoutInfo.diplomacyState = relation.State;
+
+                        if (flag3)
+                        {
+                            row.iconContainerPlayerInfoIcon.gameObject.SetActive(true);
+                            row.iconContainerPlayerInfoIcon.SetData(player, GameManager.LocalPlayer);
+                            row.iconContainer.gameObject.SetActive(true);
+                            //row.iconContainerAvatar.gameObject.SetActive(true);
+                            //row.iconContainerImageOneRow.gameObject.SetActive(true);
+                            //row.iconContainerImageTwoRows.gameObject.SetActive(true);
+                            row.showIconType = StatsRowView.IconType.PlayerInfo;
+                            row.SetShowIconType(StatsRowView.IconType.PlayerInfo);
+                            statsName = player.GetLocalizedTribeName(GameManager.GameState);
+                        }
+                        else
+                        {
+                            statsName = Localization.Get("gamestatus.unknown.tribe", new Il2CppReferenceArray<Il2CppSystem.Object>(0));
+                        }
+
+                        string statsValue = LocalizationUtils.FormatNumber(player.score);
+                        int num = 0;
+                        if (__instance.GameSettings.RulesGameMode == EnumCache<GameMode>.GetType("reign"))
+                        {
+                            foreach (PlayerState player2 in playersSortedByRank)
+                            {
+                                if (player2.Id != 255)
+                                {
+                                    num++;
+                                }
+                            }
+                        }
+                        int num2 = 0;
+                        if (flag2)
+                        {
+
+                                num2 = player.CountCapitals(GameManager.GameState);
+                                statsValue = string.Format("{0}/{1}", num2, 1);
+
+                        }
+                        int totalIncomeFromEmbassiesAndDividend = localPlayer.GetTotalIncomeFromEmbassiesAndDividend(player, GameManager.GameState);
+                        row.SetEmbassyIncome(totalIncomeFromEmbassiesAndDividend);
+                        string description = __instance.GetDescription(player, num2, userName);
+                        // string description2 = __instance.FitDescription(player, row, num2, userName);
+                        // Loader.modLogger?.LogInfo($"Sublabel: {description}");
+                        // Loader.modLogger?.LogInfo($"Sublabel: {description2}");
+                        row.SetLabelAndValue(statsName, statsValue);
+                        row.SetSubLabel(description);
+                        row.SetSmallValue($"{playerData.profile.multiplayerRating}");
+                        row.SetPlayerInfoIconLayout(layoutInfo);
+
+                        row.showSubLabel = true;
+                        row.showSmallValue = true;
+                        row.showHighlight = flag;
+                        row.showDimmedTextColors = !flag2;
+                        row.showEloButon = flag3;
+
+                        row.SetShowEmbassyContainer(totalIncomeFromEmbassiesAndDividend > 0);
+                        row.SetShowSubLabel(true);
+                        row.SetShowSmallValue(true);
+                        row.SetShowHighlightRow(flag);
+                        row.SetShowEloButton(flag3);
+                        row.RunLayoutInternal();
+                        row.SetActive(true);
+                    }
+                }
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest-Backend] GameStatsScreen PopulatePlayers error: {ex}");
+                return true;
+            } 
+        }
+        
         [HarmonyPostfix]
         [HarmonyPatch(typeof(GameModeButtonWrapper), nameof(GameModeButtonWrapper.SetData))]
         public static void SetData_GamemodeInfo(GameModeButtonWrapper __instance, GameMode summaryGameMode, GameType gameType, int scoreLimit = 10000)
@@ -268,7 +505,7 @@ namespace PolyMode
         }
 
         // =========================================================================
-        // C. Ingame Interaction Menu (Broken)
+        // C. Interaction Bar (Broken)
         // =========================================================================
 
         // public delegate void ClickButtonDelegate(int index, System.IntPtr eventDataPtr);

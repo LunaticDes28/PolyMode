@@ -17,7 +17,7 @@ public class CityAnalysisResult
 
 namespace PolyMode
 {
-    public static class MapAnalysisUtils
+    public static class MapAnalysis
     {
         /// <summary>
         /// Scans a city's center or its borders to find the best strategic tile based on nearby city counts.
