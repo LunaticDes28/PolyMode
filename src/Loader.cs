@@ -21,8 +21,8 @@ namespace PolyMode
 
             try
             {
-                ClassInjector.RegisterTypeInIl2Cpp<CitadelNameOverlay>();
-                modLogger?.LogInfo("[Conquest-Loader] CitadelNameOverlay successfully registered in IL2CPP.");
+                ClassInjector.RegisterTypeInIl2Cpp<CitadelOverlay>();
+                modLogger?.LogInfo("[Conquest-Loader] CitadelOverlay successfully registered in IL2CPP.");
             }
             catch (Exception ex)
             {
@@ -37,7 +37,7 @@ namespace PolyMode
             Harmony.CreateAndPatchAll(typeof(AI_2));
             Harmony.CreateAndPatchAll(typeof(MapAnalysis));
             
-            Harmony.CreateAndPatchAll(typeof(CitadelNameOverlay));
+            Harmony.CreateAndPatchAll(typeof(CitadelOverlay));
             Harmony.CreateAndPatchAll(typeof(CitadelOverlayPatches));
 
             RegisterCustomGameMode("conquest");

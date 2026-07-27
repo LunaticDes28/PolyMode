@@ -2,8 +2,14 @@
     "gamemode_conquest": {
         "English": "Conquest"
     },
+    "gamemode_conquest_description": {
+        "English": "Raze all the other tribes' city from the face of the Square. Without any trace left."
+    },
     "gamemode_reign": {
         "English": "Reign"
+    },
+    "gamemode_reign_description": {
+        "English": "Raze all capitals to win"
     },
     "improvement_citadel": {
 		"English": "Citadel"

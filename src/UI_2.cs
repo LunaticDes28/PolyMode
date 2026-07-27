@@ -84,6 +84,7 @@ namespace PolyMode
                 {
                     IsConquestSelected = true;
                     IsReignSelected = false;
+                    __instance.view.SetShowGameModeDescriptionText("gamemode.conquest.description");
                     Loader.modLogger?.LogInfo("[Conquest-UI] Conquest mode selected (TRUE).");
                 }
                 else
@@ -91,6 +92,7 @@ namespace PolyMode
                 {
                     IsConquestSelected = false;
                     IsReignSelected = true;
+                    __instance.view.SetShowGameModeDescriptionText("gamemode.reign.description");
                     Loader.modLogger?.LogInfo($"[Conquest-UI] Reign mode selected (True).");
                 }
                 else
@@ -99,8 +101,6 @@ namespace PolyMode
                     IsReignSelected = false;
                     Loader.modLogger?.LogInfo($"[Conquest-UI] Mode changed to: {selectedText} (FALSE).");
                 }
-                //GameSetupScreen a = new GameSetupScreen();
-                //a.gameModeInfoRow = null;
 
                 if (GameManager.PreliminaryGameSettings.GameType == GameType.SinglePlayer)
                 {
@@ -159,7 +159,6 @@ namespace PolyMode
 
                 instance.view.SetShowOpponents("Opponents", uiLabels, allowedMaxOpponents + 1);
         }
-
 
         [HarmonyPrefix]
         [HarmonyPatch(typeof(MapDataExtensions), nameof(MapDataExtensions.GetMaximumOpponentCountForMapSize))]
@@ -406,17 +405,14 @@ namespace PolyMode
                         row.SetSmallValue($"{playerData.profile.multiplayerRating}");
                         row.SetPlayerInfoIconLayout(layoutInfo);
 
-                        row.showSubLabel = true;
-                        row.showSmallValue = true;
-                        row.showHighlight = flag;
-                        row.showDimmedTextColors = !flag2;
-                        row.showEloButon = flag3;
-
-                        row.SetShowEmbassyContainer(totalIncomeFromEmbassiesAndDividend > 0);
                         row.SetShowSubLabel(true);
-                        row.SetShowSmallValue(true);
+                        if (playerData.profile.multiplayerRating != 0)
+                        {
+                            row.SetShowSmallValue(true);
+                            row.SetShowEloButton(flag3);
+                        }
                         row.SetShowHighlightRow(flag);
-                        row.SetShowEloButton(flag3);
+                        row.SetShowEmbassyContainer(totalIncomeFromEmbassiesAndDividend > 0);
                         row.RunLayoutInternal();
                         row.SetActive(true);
                     }
@@ -427,6 +423,27 @@ namespace PolyMode
             {
                 Loader.modLogger?.LogError($"[Conquest-Backend] GameStatsScreen PopulatePlayers error: {ex}");
                 return true;
+            } 
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(GameState), nameof(GameState.GetPlayersSortedForGameMode))]
+        public static void GetPlayersSortedForGameMode_Conquest(Il2CppSystem.Collections.Generic.List<PlayerState> players, GameMode gameMode, bool shouldIgnoreResigns, ref Il2CppSystem.Collections.Generic.List<PlayerState>  __result)
+        {
+            try
+            {
+                if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("conquest"))
+                {
+                    return;
+                }
+
+                players = GameState.GetPlayersSortedByCities(players);
+
+                __result = GameState.GetPlayersSortedByElimination(players, shouldIgnoreResigns);
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest-Backend] GetPlayersSortedForGameMode error: {ex}");
             } 
         }
         
@@ -461,7 +478,7 @@ namespace PolyMode
 
         [HarmonyPrefix]
         [HarmonyPatch(typeof(GameModeButtonWrapper), nameof(GameModeButtonWrapper.OnButtonClicked))]
-        public static bool OnButtonClicked_GamemodeInfo(int id, UnityEngine.EventSystems.BaseEventData? eventData = null)
+        public static bool OnButtonClicked_GamemodeInfo(GameModeButtonWrapper __instance, int id, UnityEngine.EventSystems.BaseEventData? eventData = null)
         {
             try
             {
@@ -478,13 +495,16 @@ namespace PolyMode
                 basicPopup.Header = HeaderText;
 
                 string? text = null;
+                string? text2 = Localization.Get(GameModeUtils.GetDescription(__instance.currentGameMode), (Il2CppReferenceArray<Il2CppSystem.Object>)Array.Empty<Il2CppSystem.Object>());
+
                 if (GameManager.PreliminaryGameSettings.RulesGameMode == EnumCache<GameMode>.GetType("conquest"))
                 {
-                    text = "Raze all the other tribes' city from the face of the Square. Without any trace left.";
+                    text = text2;
                 } 
                 else if (GameManager.PreliminaryGameSettings.RulesGameMode == EnumCache<GameMode>.GetType("reign"))
                 {
-                    text = "Game mode: Reign\nRaze all capitals to win";
+
+                    text = $"Game mode: Reign\n{text2}";
                 }
                 basicPopup.Description = text;
                 basicPopup.buttonData = new PopupBase.PopupButtonData[]
@@ -501,6 +521,31 @@ namespace PolyMode
             {
                 Loader.modLogger?.LogError($"[Conquest-Backend] GameModeButtonWrapper error: {ex}");
                 return true;
+            }
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(GameModeUtils), nameof(GameModeUtils.GetDescription))]
+        public static void OnButtonClicked_GamemodeInfo(GameMode gameMode, ref string __result)
+        {
+            try
+            {
+                if (gameMode == EnumCache<GameMode>.GetType("conquest"))
+                {
+                    __result = "gamemode.conquest.description";
+                }
+                else if (gameMode == EnumCache<GameMode>.GetType("reign"))
+                {
+                    __result = "gamemode.reign.description";
+                }
+                else
+                {
+                    __result = string.Empty;
+                }
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest-Backend] GameModeButtonWrapper error: {ex}");
             }
         }
 

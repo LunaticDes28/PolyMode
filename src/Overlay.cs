@@ -8,9 +8,9 @@ using System.Linq;
 
 namespace PolyMode
 {
-    public class CitadelNameOverlay : MonoBehaviour
+    public class CitadelOverlay : MonoBehaviour
     {
-        public CitadelNameOverlay(IntPtr handle) : base(handle) { }
+        public CitadelOverlay(IntPtr handle) : base(handle) { }
 
         public TextMeshPro? label;
         public SpriteRenderer? background;
@@ -186,7 +186,7 @@ namespace PolyMode
             {
                 if (data == null || data.type != EnumCache<ImprovementData.Type>.GetType("citadel")) return;
                 if (data.type == ImprovementData.Type.City) return;
-                if (__instance.transform.Find("CitadelNameOverlay") != null) return;
+                if (__instance.transform.Find("CitadelOverlay") != null) return;
 
                 // 1. 精準撈出官方原版的 CityStatusDisplay 預製物
                 var vanillaDisplay = ObjectPool.GetPooledObject<CityStatusDisplay>("CityStatusDisplay");
@@ -215,12 +215,12 @@ namespace PolyMode
                 vanillaDisplay.ReturnToPool();
 
                 // 4. 生成你的 Citadel 覆蓋層
-                var overlayObj = new GameObject("CitadelNameOverlay");
-                var overlayType = Il2CppType.Of<CitadelNameOverlay>();
+                var overlayObj = new GameObject("CitadelOverlay");
+                var overlayType = Il2CppType.Of<CitadelOverlay>();
                 var added = overlayObj.AddComponent(overlayType);
                 if (added == null) return;
 
-                var overlay = added.Cast<CitadelNameOverlay>();
+                var overlay = added.Cast<CitadelOverlay>();
                 overlayObj.transform.SetParent(__instance.transform, false);
                 overlayObj.transform.rotation = Quaternion.identity;
                 overlayObj.transform.localScale = Vector3.one; 
