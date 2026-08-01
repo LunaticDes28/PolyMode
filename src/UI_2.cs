@@ -429,11 +429,11 @@ namespace PolyMode
 
         [HarmonyPostfix]
         [HarmonyPatch(typeof(GameState), nameof(GameState.GetPlayersSortedForGameMode))]
-        public static void GetPlayersSortedForGameMode_Conquest(GameState __instance, Il2CppSystem.Collections.Generic.List<PlayerState> players, GameMode gameMode, bool shouldIgnoreResigns, ref Il2CppSystem.Collections.Generic.List<PlayerState>  __result)
+        public static void GetPlayersSortedForGameMode_Conquest(Il2CppSystem.Collections.Generic.List<PlayerState> players, GameMode gameMode, bool shouldIgnoreResigns, ref Il2CppSystem.Collections.Generic.List<PlayerState>  __result)
         {
             try
             {
-                if (__instance.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest"))
+                if (gameMode != EnumCache<GameMode>.GetType("conquest"))
                 {
                     return;
                 }
