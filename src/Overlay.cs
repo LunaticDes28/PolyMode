@@ -1,6 +1,8 @@
 using UnityEngine;
 using TMPro;
+using PolyMod;
 using Polytopia.Data;
+using PolytopiaBackendBase.Game;
 using HarmonyLib;
 using Il2CppInterop.Runtime;
 using System;
@@ -184,6 +186,12 @@ namespace PolyMode
         {
             try
             {
+                if (GameManager.GameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                    && GameManager.GameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                {
+                    return;
+                }
+
                 if (data == null || data.type != EnumCache<ImprovementData.Type>.GetType("citadel")) return;
                 if (data.type == ImprovementData.Type.City) return;
                 if (__instance.transform.Find("CitadelOverlay") != null) return;
@@ -248,7 +256,7 @@ namespace PolyMode
             }
             catch (Exception ex)
             {
-                Loader.modLogger?.LogError($"[Conquest] Overlay error: {ex}");
+                Loader.modLogger?.LogError($"[Conquest] Building SetData error: {ex}");
             }
         }
     }

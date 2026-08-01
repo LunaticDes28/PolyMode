@@ -39,7 +39,7 @@ namespace PolyMode
                     var cityRewardNode = patch["cityReward"];
                     Loader.modLogger?.LogInfo($"[Conquest-Hook] Raw node type: {cityRewardNode?.GetType()?.Name}");
 
-                    JObject? jObj = cityRewardNode.Cast<JObject>();
+                    JObject? jObj = cityRewardNode?.Cast<JObject>();
                     if (jObj != null)
                     {
                         Loader.modLogger?.LogInfo($"[Conquest-Hook] node conversion success, item count: {jObj.Count}");

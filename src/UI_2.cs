@@ -361,12 +361,19 @@ namespace PolyMode
                         {
                             row.iconContainerPlayerInfoIcon.gameObject.SetActive(true);
                             row.iconContainerPlayerInfoIcon.SetData(player, GameManager.LocalPlayer);
-                            row.iconContainer.gameObject.SetActive(true);
                             //row.iconContainerAvatar.gameObject.SetActive(true);
                             //row.iconContainerImageOneRow.gameObject.SetActive(true);
                             //row.iconContainerImageTwoRows.gameObject.SetActive(true);
-                            row.showIconType = StatsRowView.IconType.PlayerInfo;
+                            //StatsRow_Obsolete row2 = new StatsRow_Obsolete();
+                            //row2.SetActive(true);
+                            //row2.SetPlayerInfo(player, GameManager.LocalPlayer);
+                            row.OnClickedSignal.Add((System.Action)(() => {
+                                PlayerInfoPopup playerInfoPopup = PopupManager.GetPlayerInfoPopup();
+                                playerInfoPopup.SetData(player);
+                                playerInfoPopup.Show(InputManager.GetInputPosition());
+                            }));
                             row.SetShowIconType(StatsRowView.IconType.PlayerInfo);
+                            row.SetPlayerInfoIconLayout(layoutInfo);
                             statsName = player.GetLocalizedTribeName(GameManager.GameState);
                         }
                         else
@@ -403,7 +410,6 @@ namespace PolyMode
                         row.SetLabelAndValue(statsName, statsValue);
                         row.SetSubLabel(description);
                         row.SetSmallValue($"{playerData.profile.multiplayerRating}");
-                        row.SetPlayerInfoIconLayout(layoutInfo);
 
                         row.SetShowSubLabel(true);
                         if (playerData.profile.multiplayerRating != 0)
@@ -530,11 +536,11 @@ namespace PolyMode
         {
             try
             {
-                if (gameMode == EnumCache<GameMode>.GetType("conquest"))
+                if (GameManager.PreliminaryGameSettings.RulesGameMode == EnumCache<GameMode>.GetType("conquest"))
                 {
                     __result = "gamemode.conquest.description";
                 }
-                else if (gameMode == EnumCache<GameMode>.GetType("reign"))
+                else if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
                 {
                     __result = "gamemode.reign.description";
                 }
@@ -550,12 +556,8 @@ namespace PolyMode
         }
 
         // =========================================================================
-        // C. Interaction Bar (Broken)
+        // C. Improvement Menu (WIP)
         // =========================================================================
-
-        // public delegate void ClickButtonDelegate(int index, System.IntPtr eventDataPtr);
-
-        // private static readonly System.Collections.Generic.List<ClickButtonDelegate> _gcProtector = new();
 
         /*[HarmonyPostfix]
         [HarmonyPatch(typeof(InteractionBar), nameof(InteractionBar.AddImprovementButtons))]
@@ -601,25 +603,19 @@ namespace PolyMode
                         uiroundButton.buttonExpensive = !uiroundButton.buttonActive;
 
                         int num = Main.CountCityCitadel(gameState, tile.Data);
-                        uiroundButton.Cost = improvementData2.cost + num * 2;
+                        uiroundButton.Cost = improvementData2.cost + num * 10;
                         if (improvementData2.cost <= 0)
                         {
                             uiroundButton.Cost = -1f;
                         }
 
-                        Loader.modLogger?.LogInfo($"[Conquest-Bar] {improvementData2.GetName()} {uiroundButton.Cost}");
+                        Loader.modLogger?.LogInfo($"[Conquest-Bar] {uiroundButton.name} {uiroundButton.Cost}");
                         
-                        ClickButtonDelegate clickAction = (index, eventDataPtr) =>
+                        uiroundButton.onClickedSignal.Add((System.Action)(() =>
                         {
                             PopupManager.HideCurrentPopup();
                             __instance.ClickedImprovement(buildCommand);
-                        };
-
-                        _gcProtector.Add(clickAction);
-
-                        System.IntPtr nativeFuncPtr = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(clickAction);
-                        
-                        uiroundButton.OnClicked = new UIButtonBase.ButtonAction(nativeFuncPtr);
+                        }));
                     }
                 }
             }
@@ -628,5 +624,108 @@ namespace PolyMode
                 Loader.modLogger?.LogError($"[Conquest-Bar] AddImprovementButtons error: {ex}");
             }
         }*/
+
+        /*[HarmonyPostfix]
+        [HarmonyPatch(typeof(InteractionBar), nameof(InteractionBar.ClickedImprovement))]
+        public static void ClickedImprovement_Citadel(InteractionBar __instance, BuildCommand command)
+        {
+            try
+            {
+                // Only care about Citadel
+                if (command.Type != EnumCache<ImprovementData.Type>.GetType("citadel"))
+                    return;
+
+                // Get the popup that was just shown
+                IconPopup popup = PopupManager.GetCurrentPopup<IconPopup>();   // or PopupManager.CurrentPopup / ActivePopup depending on version
+                Loader.modLogger?.LogInfo($"{popup}");
+                if (popup == null) return;
+
+                // Recalculate the real cost
+                GameState gameState = GameManager.GameState;
+                Tile tile = MapRenderer.Current.GetTileInstance(__instance.coordinates);
+                int extra = Main.CountCityCitadel(gameState, tile.Data);
+
+                ImprovementData data;
+                if (!gameState.GameLogicData.TryGetData(command.Type, out data) || data == null)
+                    return;
+
+                float newCost = data.cost + extra * 10;
+                if (data.cost <= 0) newCost = -1f;
+
+                // Apply new cost
+                popup.cost = newCost;
+                Loader.modLogger?.LogInfo($"{popup.cost}");
+
+                // Force the UI to re-render the cost and button states
+                popup.RefreshButtonState();
+                popup.Show(InputManager.GetInputPosition());
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest-Backend] ClickedImprovement error: {ex}");
+            }
+        }*/
+
+        // =========================================================================
+        // D. End Match Reactions
+        // =========================================================================
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(GameOverReaction), nameof(GameOverReaction.GetHeader))]
+        public static void GetHeader_Custom(ref string __result)
+        {
+            try
+            {
+                if (GameManager.PreliminaryGameSettings.RulesGameMode == EnumCache<GameMode>.GetType("conquest"))
+                {
+                    __result = "gamemode.conquest";
+                }
+                else if (GameManager.PreliminaryGameSettings.RulesGameMode == EnumCache<GameMode>.GetType("reign"))
+                {
+                    __result = "gamemode.reign";
+                }
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest-Backend] GameOverReaction GetHeader error: {ex}");
+            } 
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(GameOverReaction), nameof(GameOverReaction.GetDescription))]
+        public static void GetDescription_Custom(PlayerState winningPlayer, ref string __result)
+        {
+            try
+            {
+                GameSettings settings = GameManager.GameState.Settings;
+                Il2CppSystem.Collections.Generic.List<PlayerState> playersSortedByRankForMultiplayerResults = GameManager.GameState.GetPlayersSortedByRankForMultiplayerResults();
+                bool flag = GameManager.LocalPlayer.Id == playersSortedByRankForMultiplayerResults[0].Id;
+                string linkedTribeNameWithSpace = winningPlayer.GetLinkedTribeNameWithSpace(GameManager.GameState);
+                
+                if (GameManager.PreliminaryGameSettings.RulesGameMode == EnumCache<GameMode>.GetType("conquest"))
+                {
+                    if (flag)
+                    {
+                        __result = Localization.Get("gamemode.conquest.win", Array.Empty<Il2CppSystem.Object>());
+                    } else {
+                        __result = Localization.Get("gamemode.conquest.loss", Array.Empty<Il2CppSystem.Object>());
+                    }
+                }
+                else if (GameManager.PreliminaryGameSettings.RulesGameMode == EnumCache<GameMode>.GetType("reign"))
+                {
+                    if (flag)
+                    {
+                        Localization.Get(GameStateUtils.SecondLastPlayerResigned(GameManager.GameState) ? "gamemode.reign.win.last.human" : "gamemode.reign.win", Array.Empty<Il2CppSystem.Object>());
+                    }
+                    else
+                    {
+                        __result = string.Empty;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest-Backend] GameOverReaction GetDescription error: {ex}");
+            } 
+        }
     }
 }

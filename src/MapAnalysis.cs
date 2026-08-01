@@ -78,10 +78,10 @@ namespace PolyMode
                     if (diff < minTL) { minTL = diff; topLeft = tile; }
                 }
 
-                if (topLeft != null) startingPoints["TopLeft"] = topLeft;
-                if (topRight != null) startingPoints["TopRight"] = topRight;
-                if (bottomLeft != null) startingPoints["BottomLeft"] = bottomLeft;
-                if (bottomRight != null) startingPoints["BottomRight"] = bottomRight;
+                if (topLeft != null && topLeft.improvement == null && MapDataExtensions.DistanceToEdge(map, topLeft.coordinates) != 0) startingPoints["TopLeft"] = topLeft;
+                if (topRight != null && topRight.improvement == null && MapDataExtensions.DistanceToEdge(map, topRight.coordinates) != 0) startingPoints["TopRight"] = topRight;
+                if (bottomLeft != null && bottomLeft.improvement == null && MapDataExtensions.DistanceToEdge(map, bottomLeft.coordinates) != 0) startingPoints["BottomLeft"] = bottomLeft;
+                if (bottomRight != null && bottomRight.improvement == null && MapDataExtensions.DistanceToEdge(map, bottomRight.coordinates) != 0) startingPoints["BottomRight"] = bottomRight;
             }
 
             CityAnalysisResult? bestResult = null;
@@ -92,6 +92,18 @@ namespace PolyMode
                 TileData startTile = kvp.Value;
 
                 if (startTile == null) continue;
+
+                bool inaccessible = true;
+                Il2CppSystem.Collections.Generic.List<TerrainData> unlockedMovements = gameState.GameLogicData.GetUnlockedMovements(currentOwner);
+                foreach (var accessible in unlockedMovements)
+                {
+                    if (startTile.terrain == accessible.type)
+                    {
+                        inaccessible = false;
+                        break;
+                    }
+                }
+                if (inaccessible) continue;
 
                 WorldCoordinates centerCoord = new WorldCoordinates(startTile.coordinates.X, startTile.coordinates.Y);
                 TileData[] areaTiles = map.GetAreaSorted(centerCoord, searchRadius, true, true);

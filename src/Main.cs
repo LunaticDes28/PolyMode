@@ -2,6 +2,7 @@ using HarmonyLib;
 using PolytopiaBackendBase.Game;
 using Polytopia.Data;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
+using UnityEngine.EventSystems;
 
 namespace PolyMode
 {
@@ -176,7 +177,7 @@ namespace PolyMode
         // =========================================================================
         [HarmonyPostfix]
         [HarmonyPatch(typeof(MapGenerator), nameof(MapGenerator.GenerateInternal))]
-        private static void GenerateInternal_DistributeVillages(MapGenerator __instance, GameState gameState)
+        private static void GenerateInternal_DistributeVillages(MapGenerator __instance, GameState gameState, MapGeneratorSettings settings)
         {
             try
             {
@@ -188,7 +189,7 @@ namespace PolyMode
                 }
 
                 Loader.modLogger?.LogInfo($"[Conquest-Map] ConquestVillageGeneration...");
-                ConquestVillageGeneration(__instance, gameState);
+                ConquestVillageGeneration(__instance, gameState, settings);
 
             }
             catch (Exception ex)
@@ -197,7 +198,7 @@ namespace PolyMode
             }
         }        
         
-        private static void ConquestVillageGeneration(MapGenerator gen, GameState gameState)
+        private static void ConquestVillageGeneration(MapGenerator gen, GameState gameState, MapGeneratorSettings settings)
         {
             try
             {
@@ -236,6 +237,8 @@ namespace PolyMode
                             gen.SetTileAsCity(targetTile);
                             neutralVillages.Add(targetTile);
                             Loader.modLogger!.LogInfo($"[Conquest-Map] {s+1}st emergency village placed at {emergencyCoords}.");
+                            gen.MakeOcean(gameState.Map, gameState, settings.shallowPercentOfWater == 0f);
+                            Loader.modLogger!.LogInfo($"[Conquest-Map] Placing water tiles again after emergency cities spawned...");
                         }
                         else
                         {
@@ -431,7 +434,7 @@ namespace PolyMode
         }
 
         // =========================================================================
-        // E. Citadel Logics
+        // E. Citadel Logics (general)
         // =========================================================================
         [HarmonyPostfix]
         [HarmonyPatch(typeof(GameLogicData), nameof(GameLogicData.CanBuild))]
@@ -492,7 +495,7 @@ namespace PolyMode
                         __result = false;
                         return;
                     }
-                    if (tile.terrain == TerrainData.Type.Water && !playerState.HasAbility(EnumCache<PlayerAbility.Type>.GetType("watercitadel"), gameState))
+                    if ((tile.terrain == TerrainData.Type.Water || tile.terrain == TerrainData.Type.Ocean) && !playerState.HasAbility(EnumCache<PlayerAbility.Type>.GetType("watercitadel"), gameState))
                     {
                         __result = false;
                         return;
@@ -518,7 +521,7 @@ namespace PolyMode
 
         /*[HarmonyPrefix]
         [HarmonyPatch(typeof(BuildAction), nameof(BuildAction.ExecuteDefault))]
-        private static bool BuildAction__Prefix(BuildAction __instance, GameState gameState)
+        private static bool BuildAction__DynamicCost(BuildAction __instance, GameState gameState)
         {
             try
             {
@@ -554,7 +557,7 @@ namespace PolyMode
                     tile.improvement = improvementState;
                     if (__instance.DeductCost)
                     {
-                        playerState.Currency -= improvementData.GetCurrencyCost() + num * 2;
+                        playerState.Currency -= improvementData.GetCurrencyCost() + num * 10;
                     }
                 }
 
@@ -726,22 +729,27 @@ namespace PolyMode
         private static void GetDefenceBonus_Citadel(UnitState unit, GameState gameState, ref int __result)
         {
             TileData tile = gameState.Map.GetTile(unit.coordinates);
-            if (tile == null)
+            if (tile == null || tile.improvement == null)
             {
                 return;
             }
 
-            if (tile != null && tile.improvement != null && tile.improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel") && tile.owner == unit.owner)
+            if (tile != null && tile?.improvement?.type == EnumCache<ImprovementData.Type>.GetType("citadel") && tile.owner == unit.owner)
             {
                 __result = 15;
             }
 
-            if (tile != null && tile.improvement != null && tile.improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel") && tile.terrain == TerrainData.Type.Mountain && tile.unit.UnitData.attack <= 3 && tile.owner == unit.owner)
+            if (tile != null && tile.unit != null && tile?.improvement?.type == EnumCache<ImprovementData.Type>.GetType("citadel") && (UnitDataExtensions.HasAbility(tile.unit, UnitAbility.Type.Hide) || tile.unit.type == UnitData.Type.Dagger || tile.unit.type == UnitData.Type.Giant))
+            {
+                return;
+            }
+
+            if (tile != null && tile?.improvement?.type == EnumCache<ImprovementData.Type>.GetType("citadel") && tile.terrain == TerrainData.Type.Mountain && tile?.unit?.UnitData.attack <= 30 && tile.owner == unit.owner)
             {
                 __result = 40;
             }
 
-            if (tile != null && tile.improvement != null && tile.improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel") && tile.terrain == TerrainData.Type.Water && tile.unit.UnitData.attack <= 3 && tile.owner == unit.owner)
+            if (tile != null && tile?.improvement?.type == EnumCache<ImprovementData.Type>.GetType("citadel") && tile.terrain == TerrainData.Type.Water && tile?.unit?.UnitData.attack <= 30 && tile.owner == unit.owner)
             {
                 __result = 40;
             }
@@ -920,7 +928,90 @@ namespace PolyMode
         }
 
         // =========================================================================
-        // F. Tech Cost & City Destruction Handler
+        // F. Citadel Logics (water)
+        // =========================================================================
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(PathFinder), nameof(PathFinder.IsTileAccessible))]
+        private static void IsTileAccessible_DenyUnusualUnits(TileData tile, TileData origin, PathFinderSettings settings, ref bool __result)
+        {
+            if (tile.improvement != null && origin.unit != null)
+            {
+                if ((tile.terrain != TerrainData.Type.Water && tile.terrain != TerrainData.Type.Ocean) || tile.improvement.type != EnumCache<ImprovementData.Type>.GetType("citadel")) 
+                {
+                    return;
+                }
+
+                if (UnitDataExtensions.HasAbility(origin.unit, UnitAbility.Type.Hide) || origin.unit.type == UnitData.Type.Dagger || origin.unit.type == UnitData.Type.Giant)
+                {
+                    __result = false;
+                }
+            }
+        }
+        
+        /*[HarmonyPrefix]
+        [HarmonyPriority(Priority.Last)]
+        [HarmonyPatch(typeof(EmbarkAction), nameof(EmbarkAction.ExecuteDefault))]
+        private static bool ExecuteDefault_WaterCitadel(EmbarkAction __instance, GameState gameState)
+        {
+            try
+            {
+                Loader.modLogger?.LogInfo("[Conquest-Citadel] Embarking on rammer 1...");
+
+                PlayerState playerState;
+                if (gameState.TryGetPlayer(__instance.PlayerId, out playerState))
+                {
+                    TileData tile = gameState.Map.GetTile(__instance.Coordinates);
+                    UnitState unit = tile.unit;
+                    UnitData.Type type = UnitData.Type.Rammership;
+
+                    if (tile.improvement.type != EnumCache<ImprovementData.Type>.GetType("citadel")) return true;
+                    Loader.modLogger?.LogInfo("[Conquest-Citadel] Embarking on rammer 2...");
+
+                    UnitData unitData;
+                    gameState.GameLogicData.TryGetData(type, out unitData);
+                    UnitState unitState = ActionUtils.TrainUnit(gameState, playerState, tile, unitData);
+                    if (!UnitDataExtensions.HasAbility(unitState, UnitAbility.Type.Protect))
+                    {
+                        unitState.health = unit.health;
+                    }
+                    unitState.home = unit.home;
+                    unitState.direction = unit.direction;
+                    unitState.flipped = unit.flipped;
+                    unitState.passengerUnit = unit;
+                    unitState.effects = unit.effects;
+                    unitState.attacked = true;
+                    unitState.moved = true;
+
+                    gameState.ActionStack.Add(new UpgradeAction(__instance.PlayerId, type, tile.coordinates, 0));
+                }
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest] Error in EmbarkAction Postfix: {ex}");
+                return true;
+            }            
+        }*/
+
+        [HarmonyPrefix]
+        [HarmonyPriority(Priority.First)]
+        [HarmonyPatch(typeof(ActionUtils), nameof(ActionUtils.TrainUnit))]
+        private static bool TrainUnit_BypassPolyMod(ref UnitState __result, GameState gameState, PlayerState playerState, TileData tile, ref UnitData unitData)
+        {
+            if (tile == null || tile.unit == null)
+            {
+                return true;
+            }
+
+            if (unitData.type == UnitData.Type.Transportship && tile.improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel"))
+            {
+                gameState.GameLogicData.TryGetData(UnitData.Type.Rammership, out unitData);
+            }
+            return true;
+        }
+
+        // =========================================================================
+        // G. Tech Cost & City Destruction Handler
         // =========================================================================
         [HarmonyPostfix]
         [HarmonyPatch(typeof(GameLogicData), nameof(GameLogicData.GetTechPrice))]
@@ -935,8 +1026,9 @@ namespace PolyMode
                     return;
                 };
 
-                float num = Math.Max(4 + techData.cost, playerState.cities + state.CurrentTurn * techData.cost);
-                num = (float)Math.Min(num, techData.cost * (playerState.cities + 2) * 2);
+                float delayedTurn = Math.Max((float)state.CurrentTurn - 3, 0);
+                float num = Math.Max(4 + techData.cost, playerState.cities + delayedTurn * techData.cost);
+                num = (float)Math.Min(num, techData.cost * (playerState.cities + 0) * 2);
                 
                 if (__instance.HasAbility(playerState, PlayerAbility.Type.Literacy))
                 {
@@ -1048,13 +1140,13 @@ namespace PolyMode
                     TileData capital = GameManager.GameState.Map.GetTile(playerState.startTile);
                     if (capital != null)
                     {
-                        for (int j = 0; j < 2; j++)
+                        for (int j = 0; j < 3; j++)
                         {
                             gameState.ActionStack.Add(new IncreasePopulationAction(playerState.Id, cityTile.coordinates, capital.coordinates, 60));
                             //instance.AddSubAction(new IncreasePopulationAction(playerState.Id, cityTile.coordinates, capital.coordinates, 60));
                         }
                         playerState.currency += 3;
-                        Loader.modLogger?.LogInfo($"[Conquest-Tech] Transferred 2 populations from abandoned city to capital at {capital.coordinates}.");
+                        Loader.modLogger?.LogInfo($"[Conquest-Tech] Transferred 3 populations from abandoned city to capital at {capital.coordinates}.");
 
                     }
                     else
@@ -1155,7 +1247,7 @@ namespace PolyMode
         }
 
         // =========================================================================
-        // G. Win Conditions
+        // H. Win Conditions
         // =========================================================================
         [HarmonyPostfix]
         [HarmonyPatch(typeof(GameState), nameof(GameState.TryGetWinner))]
@@ -1212,7 +1304,7 @@ namespace PolyMode
         }
 
         // =========================================================================
-        // H. Reactions
+        // I. Reactions
         // =========================================================================
         private static Il2CppSystem.Action? _activePopupCallbackHolder;
 
@@ -1309,7 +1401,10 @@ namespace PolyMode
 
                 if (GameManager.IsPlayerViewing((byte)attackerId) && !GameManager.Client.IsSpectating)
                 {
-                    CameraController.Instance.CenterOnPosition(tile.coordinates.ToPosition(), 0.8f, null, false);
+                    if (!CameraController.Instance.isTechViewEnabled == true)
+                    {
+                        CameraController.Instance.CenterOnPosition(tile.coordinates.ToPosition(), 0.8f, null, false);
+                    }
 
                     // Attacker - No button
                     string tribeName = prevOwnerState.tribe.GetName();;
@@ -1329,7 +1424,10 @@ namespace PolyMode
                 }
                 else if (GameManager.IsPlayerViewing(__instance.action.OldOwnerId) && !GameManager.Client.IsSpectating)
                 {
-                    CameraController.Instance.CenterOnPosition(tile.coordinates.ToPosition(), 0.8f, null, false);
+                    if (!CameraController.Instance.isTechViewEnabled == true)
+                    {
+                        CameraController.Instance.CenterOnPosition(tile.coordinates.ToPosition(), 0.8f, null, false);
+                    }
 
                     // Defender - With button
                     string linkedTribeNameWithSpace = playerState.GetLinkedTribeNameWithSpace(GameManager.GameState);
@@ -1354,13 +1452,27 @@ namespace PolyMode
                         basicPopup.Header = title;
                         basicPopup.Description = message;
                         basicPopup.SetTribeInfoButtons(TextType.Description);
-                        basicPopup.buttonData = new PopupBase.PopupButtonData[]
+                        /*basicPopup.buttonData = new PopupBase.PopupButtonData[]
                         {
                             new PopupBase.PopupButtonData("buttons.ok", PopupBase.PopupButtonData.States.Selected, onComplete, -1, true, null)
-                        };
-                        Loader.modLogger?.LogInfo($"ButtonData is {basicPopup.buttonData}");
+                        };*/
+                        
+                        PopupBase.PopupButtonData[] array = new PopupBase.PopupButtonData[1];
+						int num = 0;
+                        /*UIButtonBase.ButtonAction callback;
+                        void OnOkClicked(int id, BaseEventData eventData)
+                        {
+                            onComplete?.Invoke();
+                        }
+                        callback = Il2CppInterop.Runtime.DelegateSupport.ConvertDelegate<UIButtonBase.ButtonAction>(OnOkClicked);*/
+            
+                        array[num] = new PopupBase.PopupButtonData("buttons.ok", PopupBase.PopupButtonData.States.Selected, onComplete, -1, true, null);
 
-                        basicPopup.Show(InputManager.GetInputPosition());
+                        basicPopup.buttonData = array;
+                        Loader.modLogger?.LogInfo($"ButtonData is {basicPopup.buttonData}");
+                        basicPopup.RefreshButtonState();
+                        Loader.modLogger?.LogInfo("[Conquest-Backend] Button refreshed!");
+                        basicPopup.Show();
                         Loader.modLogger?.LogInfo("[Conquest-Backend] ExecutePopupLogic finished!");
                     }
                 }

@@ -1,5 +1,7 @@
 using HarmonyLib;
+using Il2CppInterop.Runtime.Runtime;
 using Polytopia.Data;
+using PolytopiaBackendBase;
 using PolytopiaBackendBase.Game;
 
 namespace PolyMode
@@ -83,7 +85,7 @@ namespace PolyMode
             if (cityAdvantage > 0)
             {
                 OpinionState opinionState = new OpinionState();
-                opinionState.AddOpinion((float)(hate * 2.3), EnumCache<OpinionManager.Type>.GetType("hegemonic"));
+                opinionState.AddOpinion((float)(hate * 2.3), EnumCache<OpinionManager.Type>.GetType("obstinate"));
                 opinionState.AddOpinion((float)(hate * 1.2), OpinionManager.Type.Winning);
 
                 if (!__instance.Opinions.ContainsKey(opponent.Id))
@@ -91,10 +93,10 @@ namespace PolyMode
                     __instance.Opinions[opponent.Id] = new OpinionState();
                 }
                 __instance.Opinions[opponent.Id].AddOpinion(opinionState.GetOpinion(OpinionManager.Type.Winning) * -1f, OpinionManager.Type.Winning);
-                __instance.Opinions[opponent.Id].AddOpinion(opinionState.GetOpinion(EnumCache<OpinionManager.Type>.GetType("hegemonic")) * -1f, EnumCache<OpinionManager.Type>.GetType("hegemonic"));
+                __instance.Opinions[opponent.Id].AddOpinion(opinionState.GetOpinion(EnumCache<OpinionManager.Type>.GetType("obstinate")) * -1f, EnumCache<OpinionManager.Type>.GetType("obstinate"));
 
                 // Loader.modLogger?.LogInfo($"Dominating opinion to player {opponent.Id} = {__instance.Opinions[opponent.Id].GetOpinion(OpinionManager.Type.Winning)}");
-                // Loader.modLogger?.LogInfo($"hegemonic opinion to player {opponent.Id} = {__instance.Opinions[opponent.Id].GetOpinion(EnumCache<OpinionManager.Type>.GetType("hegemonic"))}");
+                // Loader.modLogger?.LogInfo($"obstinate opinion to player {opponent.Id} = {__instance.Opinions[opponent.Id].GetOpinion(EnumCache<OpinionManager.Type>.GetType("obstinate"))}");
             }
         }
 
@@ -115,7 +117,7 @@ namespace PolyMode
 
             if (cityAdv > 0f)
             {
-                __result += cityAdv * 3f;
+                __result += cityAdv * 2f;
                 // Loader.modLogger?.LogInfo($"Battle hostility to player {defendingTile.owner} = {__result}");
             }
         }
@@ -239,8 +241,13 @@ namespace PolyMode
                     __result = EnumCache<CityReward>.GetType("evacuation");
                 }
                 else
+                if (tile.unit != null && tile.unit.owner != playerState.Id)
                 {
-                    int num = random.Next(0, 1);
+                    __result = EnumCache<CityReward>.GetType("evacuation");
+                }
+                else
+                {
+                    int num = random.Next(0, 2);
                     if (num == 0)
                     {
                         __result = CityReward.Explorer;
@@ -254,7 +261,7 @@ namespace PolyMode
             else
             if (tile.improvement.level == 3)
             {
-                int num = random.Next(0, 2);
+                int num = random.Next(0, 3);
                 if (num == 0)
                 {
                     __result = CityReward.CityWall;
@@ -273,6 +280,7 @@ namespace PolyMode
             if (tile.improvement.level == 4)
             {
                 CityAnalysisResult? centerResult = MapAnalysis.ScanCity(gameState.Map, gameState, tile, 8, true, playerState);
+                CityAnalysisResult? centerResult2 = MapAnalysis.ScanCity(gameState.Map, gameState, tile, 3, true, playerState);
                 // MapAnalysis.LogAnalysisResult(tile, centerResult, 8);
 
                 if (centerResult != null && centerResult.EnemyCityCount == 0 && playerState.cities >= 4)
@@ -283,6 +291,17 @@ namespace PolyMode
                     $"Forcing Tax Reform selection!");
 
                     __result = EnumCache<CityReward>.GetType("taxreform");
+                }
+                else
+                if (centerResult != null && centerResult.OwnedCityCount >= 5)
+                {
+                    Loader.modLogger?.LogInfo(
+                    $"[Conquest-Tax] Capital at location ({tile.coordinates.X}, {tile.coordinates.Y}) is protected. " +
+                    $"(Enemies: {centerResult.EnemyCityCount}). " +
+                    $"Forcing Tax Reform selection!");
+
+                    __result = EnumCache<CityReward>.GetType("taxreform");
+
                 }
                 else
                 {
@@ -327,7 +346,7 @@ namespace PolyMode
                         false, 
                         player,
                         Faction.Both,
-                        false                 
+                        false
                     );
 
                     if (bestCornerResult != null && bestCornerResult.TargetTile != null)
@@ -390,6 +409,101 @@ namespace PolyMode
             {
                 Loader.modLogger?.LogError($"[Conquest-AI] Error in GetImprovementScore: {ex}");
             }
+        }           
+                    
+        // =========================================================================
+        // C. Military Behaviors
+        // =========================================================================
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(AI), nameof(AI.GetBuildUnitScore))]
+        private static void GetBuildUnitScore_DenyStiff(GameState gameState, PlayerState player, UnitData unit, AI.UnitStats desiredUnitStats, ref float __result, TileData? tile = null)
+        {
+            try
+            {
+                if (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                    && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                {
+                    return;
+                }
+
+                if (!unit.HasAbility(UnitAbility.Type.Stiff)) return;
+
+                if (tile != null && !IsTileSafe(gameState, player, tile))
+                {
+                    __result = 0;
+                }
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest-AI] Error in GetBuildUnitScore: {ex}");
+            }
+        }
+
+        /*[HarmonyPostfix]
+        [HarmonyPatch(typeof(PathFinder), nameof(PathFinder.GetMoveOptions))]
+        private static void GetMoveOptions_StopSuicide(GameState gameState, WorldCoordinates start, int maxCost, UnitState unit, ref Il2CppSystem.Collections.Generic.List<WorldCoordinates> __result)
+        {
+            try
+            {
+                if (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                    && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                {
+                    return;
+                }
+
+                if (!unit.HasAbility(UnitAbility.Type.Stiff)) return;
+
+                PlayerState player;
+                gameState.TryGetPlayer(unit.owner, out player);
+
+                // 1. Create a safe, temporary C# array snapshot of the results
+                var optionsCopy = __result.ToArray();
+                // Loader.modLogger?.LogError($"[Conquest-AI] Success ToArray");
+
+                // 2. Iterate over the safe snapshot instead
+                foreach (WorldCoordinates option in optionsCopy)
+                {
+                    TileData tile = gameState.Map.GetTile(option);
+                    if (!IsTileSafe(gameState, player, tile))
+                    {
+                        // 3. It is now perfectly safe to remove from the original __result list
+                        // Loader.modLogger?.LogError($"[Conquest-AI] Tryna remove");
+                        __result.Remove(option);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest-AI] Error in GetMoveOptions: {ex}");
+            }
+        }*/
+
+        public static bool IsTileSafe(GameState gameState, PlayerState player, TileData tile)
+        {
+            TileData[] areaSorted = MapDataExtensions.GetAreaSorted(gameState.Map, tile.coordinates, 6, true, true);
+            foreach (TileData tile2 in areaSorted) {
+                if (tile2.unit != null && tile2.unit.owner != player.Id)
+                {
+                    TileData[] areaSorted2 = MapDataExtensions.GetAreaSorted(gameState.Map, tile2.coordinates, 2, true, true);
+                    Il2CppSystem.Collections.Generic.List<WorldCoordinates> moveOptions = tile2.unit.GetMovementOptions(gameState, UnitDataExtensions.GetMovement(tile2.unit, gameState));
+                    Il2CppSystem.Collections.Generic.List<WorldCoordinates> attackOptions = tile2.unit.GetAttackOptions(gameState, UnitDataExtensions.GetRange(tile2.unit.UnitData));
+                    
+                    foreach (TileData tile3 in areaSorted2) {
+                        {
+                            if (moveOptions.Contains(tile3.coordinates) && tile2.unit.HasAbility(UnitAbility.Type.Dash))
+                            {
+                                return false;
+                            }
+                        }
+                    }
+
+                    if (attackOptions.Contains(tile.coordinates))
+                    {
+                        return false;
+                    }
+                }
+            }
+            return true;
         }
     }
 }

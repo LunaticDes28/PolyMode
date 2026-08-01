@@ -5,11 +5,26 @@
     "gamemode_conquest_description": {
         "English": "Raze all the other tribes' city from the face of the Square. Without any trace left."
     },
+    "gamemode_conquest_loss": {
+        "English": "Your last city was lost, you have been defeated."
+    },
+    "gamemode_conquest_win": {
+        "English": "You have defeated all the other tribes and purified the entire Square!"
+    },
     "gamemode_reign": {
         "English": "Reign"
     },
     "gamemode_reign_description": {
         "English": "Raze all capitals to win"
+    },
+    "gamemode_reign_win": {
+        "English": "All capitals were razed"
+    },
+    "gamemode_reign_win_last_human": {
+        "English": "You are the last standing human player, you win!"
+    },
+    "gamemode_reign_win_no_opponents": {
+        "English": "No opponents left"
     },
     "improvement_citadel": {
 		"English": "Citadel"
@@ -27,10 +42,10 @@
 		"English": "Water Citadel"
 	},   
     "tooltip_ability_mountaincitadel": {
-		"English": "Allows Citadel to be built on Mountain and provides defence bonus"
+		"English": "Unlocks Citadel on Mountain and provides defence bonus on tile."
 	},    
     "tooltip_ability_watercitadel": {
-		"English": "Allows Citadel to be built on Water and provides defence bonus"
+		"English": "Unlocks Citadel on Water and provides defence bonus on tile. Units that move here will turn into rammer."
 	},     
     "wcontroller_reward_evacuation": {
         "English": "Evacuation"
@@ -41,10 +56,10 @@
     "wcontroller_reward_taxreform": {
         "English": "Tax Reform"
     },
-    "opinion_reason_hegemonic": {
-        "English": "hegemonic"
+    "opinion_reason_obstinate": {
+        "English": "obstinate"
       },
-      "opinion_reason_hegemonic_description": {
+      "opinion_reason_obstinate_description": {
         "English": "Your empire rules many cities."
     }
 }
