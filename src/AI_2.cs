@@ -395,6 +395,22 @@ namespace PolyMode
                                     $"Adding Military Score: +{militaryScore}");*/
                             }
                             num += totalStrategicScore;
+                            if (rulingCity.improvement.borderSize == 2)
+                            {
+                                num *= 0.5f;
+                                if (num >= 180 && targetedCornerTile.improvement.type == ImprovementData.Type.Port)
+                                {
+                                    gameState.ActionStack.Add(new DestroyImprovementAction(player.Id, targetedCornerTile.coordinates));
+                                }
+                            }
+                            else
+                            if (rulingCity.improvement.borderSize == 3)
+                            {
+                                if (num >= 900 && targetedCornerTile.improvement.type == ImprovementData.Type.Port)
+                                {
+                                    gameState.ActionStack.Add(new DestroyImprovementAction(player.Id, targetedCornerTile.coordinates));
+                                }
+                            }
                         }
                         else
                         {

@@ -207,11 +207,6 @@ namespace PolyMode
         {
             try
             {
-                if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
-                {
-                    return;
-                }
-
                 if (__instance.GameSettings.RulesGameMode == EnumCache<GameMode>.GetType("reign"))
                 {
                     __instance.scoreHeader.Key = "gamestatus.capitals";
@@ -230,7 +225,7 @@ namespace PolyMode
         {
             try
             {
-                if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("conquest"))
+                if (__instance.GameSettings.RulesGameMode != EnumCache<GameMode>.GetType("conquest"))
                 {
                     return;
                 }
@@ -253,7 +248,7 @@ namespace PolyMode
         {
             try
             {
-                if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                if (__instance.GameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
                 {
                     return;
                 }
@@ -294,7 +289,7 @@ namespace PolyMode
         {
             try
             {
-                if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                if (__instance.GameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
                 {
                     return true;
                 }
@@ -434,11 +429,11 @@ namespace PolyMode
 
         [HarmonyPostfix]
         [HarmonyPatch(typeof(GameState), nameof(GameState.GetPlayersSortedForGameMode))]
-        public static void GetPlayersSortedForGameMode_Conquest(Il2CppSystem.Collections.Generic.List<PlayerState> players, GameMode gameMode, bool shouldIgnoreResigns, ref Il2CppSystem.Collections.Generic.List<PlayerState>  __result)
+        public static void GetPlayersSortedForGameMode_Conquest(GameState __instance, Il2CppSystem.Collections.Generic.List<PlayerState> players, GameMode gameMode, bool shouldIgnoreResigns, ref Il2CppSystem.Collections.Generic.List<PlayerState>  __result)
         {
             try
             {
-                if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("conquest"))
+                if (__instance.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest"))
                 {
                     return;
                 }
@@ -459,8 +454,8 @@ namespace PolyMode
         {
             try
             {
-                if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
-                    && GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                if (summaryGameMode != EnumCache<GameMode>.GetType("conquest")
+                    && summaryGameMode != EnumCache<GameMode>.GetType("reign"))
                 {
                     return;
                 }
@@ -488,13 +483,13 @@ namespace PolyMode
         {
             try
             {
-                if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
-                    && GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                if (__instance.currentGameMode != EnumCache<GameMode>.GetType("conquest")
+                    && __instance.currentGameMode != EnumCache<GameMode>.GetType("reign"))
                 {
                     return true;
                 }
                 
-                string modeName = GameManager.PreliminaryGameSettings.RulesGameMode.GetName();
+                string modeName = __instance.currentGameMode.GetName();
                 string HeaderText = LocalizationUtils.CapitalizeString(modeName);
 
               	BasicPopup basicPopup = PopupManager.GetBasicPopup();
@@ -503,11 +498,11 @@ namespace PolyMode
                 string? text = null;
                 string? text2 = Localization.Get(GameModeUtils.GetDescription(__instance.currentGameMode), (Il2CppReferenceArray<Il2CppSystem.Object>)Array.Empty<Il2CppSystem.Object>());
 
-                if (GameManager.PreliminaryGameSettings.RulesGameMode == EnumCache<GameMode>.GetType("conquest"))
+                if (__instance.currentGameMode == EnumCache<GameMode>.GetType("conquest"))
                 {
                     text = text2;
                 } 
-                else if (GameManager.PreliminaryGameSettings.RulesGameMode == EnumCache<GameMode>.GetType("reign"))
+                else if (__instance.currentGameMode == EnumCache<GameMode>.GetType("reign"))
                 {
 
                     text = $"Game mode: Reign\n{text2}";
@@ -536,11 +531,11 @@ namespace PolyMode
         {
             try
             {
-                if (GameManager.PreliminaryGameSettings.RulesGameMode == EnumCache<GameMode>.GetType("conquest"))
+                if (gameMode == EnumCache<GameMode>.GetType("conquest"))
                 {
                     __result = "gamemode.conquest.description";
                 }
-                else if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                else if (gameMode != EnumCache<GameMode>.GetType("reign"))
                 {
                     __result = "gamemode.reign.description";
                 }
@@ -675,11 +670,11 @@ namespace PolyMode
         {
             try
             {
-                if (GameManager.PreliminaryGameSettings.RulesGameMode == EnumCache<GameMode>.GetType("conquest"))
+                if (GameManager.GameState.Settings.RulesGameMode == EnumCache<GameMode>.GetType("conquest"))
                 {
                     __result = "gamemode.conquest";
                 }
-                else if (GameManager.PreliminaryGameSettings.RulesGameMode == EnumCache<GameMode>.GetType("reign"))
+                else if (GameManager.GameState.Settings.RulesGameMode == EnumCache<GameMode>.GetType("reign"))
                 {
                     __result = "gamemode.reign";
                 }
@@ -701,7 +696,7 @@ namespace PolyMode
                 bool flag = GameManager.LocalPlayer.Id == playersSortedByRankForMultiplayerResults[0].Id;
                 string linkedTribeNameWithSpace = winningPlayer.GetLinkedTribeNameWithSpace(GameManager.GameState);
                 
-                if (GameManager.PreliminaryGameSettings.RulesGameMode == EnumCache<GameMode>.GetType("conquest"))
+                if (settings.RulesGameMode == EnumCache<GameMode>.GetType("conquest"))
                 {
                     if (flag)
                     {
@@ -710,7 +705,7 @@ namespace PolyMode
                         __result = Localization.Get("gamemode.conquest.loss", Array.Empty<Il2CppSystem.Object>());
                     }
                 }
-                else if (GameManager.PreliminaryGameSettings.RulesGameMode == EnumCache<GameMode>.GetType("reign"))
+                else if (settings.RulesGameMode == EnumCache<GameMode>.GetType("reign"))
                 {
                     if (flag)
                     {
