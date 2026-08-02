@@ -527,7 +527,7 @@ namespace PolyMode
 
         [HarmonyPostfix]
         [HarmonyPatch(typeof(GameModeUtils), nameof(GameModeUtils.GetDescription))]
-        public static void OnButtonClicked_GamemodeInfo(GameMode gameMode, ref string __result)
+        public static void GetDescription_GamemodeInfo(GameMode gameMode, ref string __result)
         {
             try
             {
@@ -546,7 +546,7 @@ namespace PolyMode
             }
             catch (Exception ex)
             {
-                Loader.modLogger?.LogError($"[Conquest-Backend] GameModeButtonWrapper error: {ex}");
+                Loader.modLogger?.LogError($"[Conquest-Backend] GameModeUtils error: {ex}");
             }
         }
 

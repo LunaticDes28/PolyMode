@@ -1,5 +1,6 @@
 using HarmonyLib;
 using Il2CppInterop.Runtime.Runtime;
+using Il2CppSystem.Xml.Schema;
 using Polytopia.Data;
 using PolytopiaBackendBase;
 using PolytopiaBackendBase.Game;
@@ -387,7 +388,7 @@ namespace PolyMode
 
                             if (bestCornerResult.EnemyCityCount > 0 || bestCornerResult.OwnedCityCount > 0)
                             {
-                                float militaryScore = bestCornerResult.EnemyCityCount * 20f - bestCornerResult.OwnedCityCount * 10f; 
+                                float militaryScore = bestCornerResult.EnemyCityCount * 50f - bestCornerResult.OwnedCityCount * 20f; 
                                 totalStrategicScore += militaryScore;
 
                                 /*Loader.modLogger?.LogInfo(
@@ -398,18 +399,18 @@ namespace PolyMode
                             if (rulingCity.improvement.borderSize == 2)
                             {
                                 num *= 0.5f;
-                                if (num >= 180 && targetedCornerTile.improvement.type == ImprovementData.Type.Port)
+                                /*if (num >= 180 && targetedCornerTile.improvement != null && !targetedCornerTile.improvement.type.IsMonument())
                                 {
                                     gameState.ActionStack.Add(new DestroyImprovementAction(player.Id, targetedCornerTile.coordinates));
-                                }
+                                }*/
                             }
                             else
                             if (rulingCity.improvement.borderSize == 3)
                             {
-                                if (num >= 900 && targetedCornerTile.improvement.type == ImprovementData.Type.Port)
+                                /*if (num >= 900 && targetedCornerTile.improvement != null && !targetedCornerTile.improvement.type.IsMonument())
                                 {
                                     gameState.ActionStack.Add(new DestroyImprovementAction(player.Id, targetedCornerTile.coordinates));
-                                }
+                                }*/
                             }
                         }
                         else
@@ -426,13 +427,244 @@ namespace PolyMode
                 Loader.modLogger?.LogError($"[Conquest-AI] Error in GetImprovementScore: {ex}");
             }
         }           
+
+        /*[HarmonyPostfix]
+        [HarmonyPatch(typeof(AI), nameof(AI.AddPossibleImprovementCommands))]
+        private static void AddPossibleImprovementCommands_Citadel(GameState gameState, PlayerState player, List<AI.ScoredCommand> possibleCommands)
+        {
+            try
+            {
+                foreach (TileData tileData in player.aiState.PlayerMapData.empireTiles)
+                {
+                    if (tileData.improvement != null)
+                    {
+                        //ImprovementData previousData;
+                        //gameState.GameLogicData.TryGetData(tileData.improvement.type, out previousData);
+                        //float num = AI.GetImprovementScore(gameState, previousData, tileData, player);
+                        //Loader.modLogger?.LogInfo($"[Conquest-AI] Old improvement is {tileData.improvement.name} with {num}.");
+
+                        ImprovementData citadelData;
+                        gameState.GameLogicData.TryGetData(EnumCache<ImprovementData.Type>.GetType("citadel"), out citadelData);
+                        float num2 = AI.GetImprovementScore(gameState, citadelData, tileData, player);
+                
+                        TileData[] nearbyTiles = gameState.Map.GetAreaSorted(tileData.coordinates, 3, true, true);
+
+                        int unclaimedCount = 0;
+                        if (nearbyTiles != null)
+                        {
+                            foreach (var tileInZone in nearbyTiles)
+                            {
+                                if (tileInZone != null && (tileInZone.owner == 0))
+                                {
+                                    unclaimedCount++;
+                                }
+                            }
+                        }
+
+                        Loader.modLogger?.LogInfo($"[Conquest-AI] Citadel improvement is Citadel with {unclaimedCount}.");
+
+                        if (unclaimedCount > 4)
+                        {
+                            CommandBase command = new DestroyCommand(player.Id, tileData.coordinates);
+                            possibleCommands.Add(new AI.ScoredCommand
+                            {
+                                command = command,
+                                score = 1000
+                            });
+                            Loader.modLogger?.LogInfo($"[Conquest-AI] Overrided old improvement when {unclaimedCount}.");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest-AI] Error in AddPossibleImprovementCommands: {ex}");
+            }
+        }*/    
+
+        private static int lastProcessedTurn = -1;
+        private static byte lastProcessedPlayer = 255;
+        private static readonly HashSet<WorldCoordinates> processedTilesThisTurn = new HashSet<WorldCoordinates>();
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(AI), nameof(AI.GetTileCommands))]
+        private static void GetTileCommands_CitadelInterceptor(GameState gameState, PlayerState player, CommandType specificCommand, ref CommandBase __result)
+        {
+            try
+            {
+                if (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                    && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                {
+                    return;
+                }
+
+                if (__result == null) return;
+
+                var empireTiles = player.aiState?.PlayerMapData?.empireTiles;
+                if (empireTiles == null) return;
+
+                // 【安全自動解鎖機制】：如果發現遊戲回合變了，或者換別的國家 AI 思考了，自動清空鎖
+                if (gameState.CurrentTurn != lastProcessedTurn || player.Id != lastProcessedPlayer)
+                {
+                    lastProcessedTurn = (int)gameState.CurrentTurn;
+                    lastProcessedPlayer = player.Id;
+                    processedTilesThisTurn.Clear();
+                }
+
+                float globalBestScoreDifference = 0f; 
+                DestroyCommand? globalBestDestroyCmd = null;
+                
+                ImprovementData? bestOldType = null;
+                ImprovementData? bestNewType = null;
+
+                string globalOldName = "";
+                string globalNewName = "";
+                float globalOldScore = 0f;
+                float globalNewScore = 0f;
+
+                foreach (TileData tileData in empireTiles)
+                {  
+                    if (tileData != null && tileData.improvement != null && 
+                        tileData.improvement.type != ImprovementData.Type.City && 
+                        tileData.improvement.type != ImprovementData.Type.LightHouse && 
+                        tileData.improvement.type != EnumCache<ImprovementData.Type>.GetType("citadel"))
+                    {
+                        // 【關鍵安全攔截】：如果這一格在「本回合的這一串決策流」中已經被下達過拆除指令，直接跳過！
+                        // 這能 100% 阻斷同一個坐標在同一個 Tick 內被反覆塞入 10 次的無窮死迴圈
+                        if (processedTilesThisTurn.Contains(tileData.coordinates))
+                        {
+                            continue;
+                        }
+
+                        ImprovementData previousData;
+                        if (!gameState.GameLogicData.TryGetData(tileData.improvement.type, out previousData)) continue;
+
+                        float num = ForceGetImprovementScore(gameState, previousData, tileData, player);
+                        num = (float)Math.Round(num);
+                        string name = previousData.type.GetDisplayName();
+                        Loader.modLogger?.LogInfo($"[Conquest-AI] Old previous improvement is {name} with {num}.");
+
+                        foreach (CommandBase commandBase in ForceGetBuildableImprovements(gameState, player, tileData, true))
+                        {
+                            BuildCommand buildCommand = commandBase.Cast<BuildCommand>();
+                            ImprovementData currentData;
+                            if (!gameState.GameLogicData.TryGetData(buildCommand.Type, out currentData)) continue;
+
+                            float num2 = ForceGetImprovementScore(gameState, currentData, tileData, player);
+                            string name2 = currentData.type.GetDisplayName();
+
+                            if (currentData.type == EnumCache<ImprovementData.Type>.GetType("citadel"))
+                            {
+                                TileData capital = gameState.Map.GetTile(tileData.rulingCityCoordinates);
+                                CityAnalysisResult? bestCornerResult = ForceScanCornerForCitadel(
+                                    gameState.Map, gameState, capital, 5, false, player, Faction.Both, false
+                                );
+
+                                int unclaimedCount = 0;
+                                if (bestCornerResult != null && bestCornerResult.TargetTile != null)
+                                {
+                                    TileData targetedCornerTile = bestCornerResult.TargetTile;
+
+                                    if (tileData.coordinates.X == targetedCornerTile.coordinates.X && 
+                                        tileData.coordinates.Y == targetedCornerTile.coordinates.Y)
+                                    {
+                                        TileData[] nearbyTiles = MapDataExtensions.GetAreaSorted(gameState.Map, tileData.coordinates, capital.improvement.borderSize, true, true);
+                                        if (nearbyTiles != null)
+                                        {
+                                            for (int i = 0; i < nearbyTiles.Length; i++)
+                                            {
+                                                if (nearbyTiles[i] != null && nearbyTiles[i].owner == 0)
+                                                {
+                                                    unclaimedCount++;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    num2 = (float)(unclaimedCount * 75 / Math.Pow(capital.improvement.borderSize, 1.5));
+                                }
+                                else
+                                {
+                                    continue; 
+                                }
+                            }
+
+                            if ((num2 > 0f && currentData.rewards.GetPopulation() > 0) || currentData.growthRewards.GetPopulation() > 0)
+                            {
+                                TileData tile = gameState.Map.GetTile(tileData.rulingCityCoordinates);
+                                if (tile.CanCityBeUpgraded(gameState))
+                                {
+                                    int num3 = tile.PopulationNeededToUpgradeCity();
+                                    if (num3 > 0)
+                                    {
+                                        num2 += (float)(200 / num3);
+                                    }
+                                }
+                            }
+
+                            num2 *= AI.getPriceFactor(currentData.cost, player);
+                            num2 = (float)Math.Round(num2);
+                            Loader.modLogger?.LogInfo($"[Conquest-AI] New possible improvement is {name2} with {num2}.");
+
+                            if (num2 > num && num2 > 150
+                                && !previousData.type.IsMonument() && !previousData.type.IsTemple()
+                                && !currentData.type.IsMonument() && !currentData.type.IsTemple())
+                            {
+                                float scoreDifference = num2 - num;
+
+                                 if (scoreDifference > globalBestScoreDifference)
+                                {
+                                    DestroyCommand destroyCmd = new DestroyCommand(player.Id, tileData.coordinates);
+                                    if (destroyCmd.IsValid(gameState))
+                                    {
+                                        globalBestScoreDifference = scoreDifference;
+                                        globalBestDestroyCmd = destroyCmd;
+                                        
+                                        bestOldType = previousData;
+                                        bestNewType = currentData;
+
+                                        globalOldName = name;
+                                        globalNewName = name2;
+                                        globalOldScore = num;
+                                        globalNewScore = num2;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (globalBestDestroyCmd != null)
+                {
+                    if (bestOldType?.type == bestNewType?.type)
+                    {
+                        Loader.modLogger?.LogInfo($"[Conquest-AI] Best replacement for {globalOldName} at {globalBestDestroyCmd.Coordinates} is the same improvement. Destroy command safely denied.");
+                    }
+                    else if (bestNewType != null && bestNewType.HasAbility(ImprovementAbility.Type.Consumed))
+                    {
+                        Loader.modLogger?.LogInfo($"[Conquest-AI] Best replacement for {globalOldName} at {globalBestDestroyCmd.Coordinates} is a resource ({globalNewName}). Destroy command safely denied.");
+                    }
+                    else
+                    {
+                        // 【安全鎖定】：在決定發送此拆除指令時，立刻記錄該座標，本回合內不可再對其重複發送 DestroyCommand
+                        processedTilesThisTurn.Add(globalBestDestroyCmd.Coordinates);
+
+                        __result = globalBestDestroyCmd;
+                        Loader.modLogger?.LogInfo($"[Conquest-AI] Globally selected best conversion at {globalBestDestroyCmd.Coordinates}: Destroying {globalOldName} ({globalOldScore}) to clear path for {globalNewName} ({globalNewScore}) [Net Gain: +{globalBestScoreDifference}].");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest-AI] Error in GetTileCommands_CitadelInterceptor: {ex}");
+            }
+        }
                     
         // =========================================================================
         // C. Military Behaviors
         // =========================================================================
         [HarmonyPostfix]
         [HarmonyPatch(typeof(AI), nameof(AI.GetBuildUnitScore))]
-        private static void GetBuildUnitScore_DenyStiff(GameState gameState, PlayerState player, UnitData unit, AI.UnitStats desiredUnitStats, ref float __result, TileData? tile = null)
+        private static void GetBuildUnitScore_Combined(GameState gameState, PlayerState player, UnitData unit, AI.UnitStats desiredUnitStats, ref float __result, TileData? tile = null)
         {
             try
             {
@@ -441,23 +673,102 @@ namespace PolyMode
                 {
                     return;
                 }
+                if (!player.AutoPlay) return;
 
-                if (!unit.HasAbility(UnitAbility.Type.Stiff)) return;
+                if (tile == null) return;
 
-                if (tile != null && !IsTileSafe(gameState, player, tile))
+                // 1. Deny Stiff
+                if (unit.HasAbility(UnitAbility.Type.Stiff))
                 {
-                    __result = 0;
+                    if (IsTileDangerous(gameState, player, tile.coordinates, 6))
+                    {
+                        //Loader.modLogger?.LogInfo($"[Conquest-AI] Denied stiff at {tile.coordinates}.");
+                        __result = 0f;
+                        return;
+                    }
+                }
+
+                // 2. Deny Closed Lake
+                if (tile.IsWater)
+                {
+                    var empireTiles = player.aiState?.PlayerMapData?.empireTiles;
+                    if (empireTiles != null && empireTiles.Contains(tile))
+                    {
+                        if (IsWaterUnderMyControl(gameState, tile, player))
+                        {
+                            if (unit.type == UnitData.Type.Rammership)
+                            {
+                                //Loader.modLogger?.LogInfo($"[Conquest-AI] Zero score for Rammer in closed lake at {tile.coordinates}.");
+                                __result = 0f;
+                            }
+                            else if (unit.type == UnitData.Type.Bombership || unit.type == UnitData.Type.Scout)
+                            {
+                                //Loader.modLogger?.LogInfo($"[Conquest-AI] Reduced score for Bomber/Scout in closed lake at {tile.coordinates}.");
+                                __result *= 0.5f;
+                            }
+                        }
+                    }
                 }
             }
             catch (Exception ex)
             {
-                Loader.modLogger?.LogError($"[Conquest-AI] Error in GetBuildUnitScore: {ex}");
+                Loader.modLogger?.LogError($"[Conquest-AI] Error in GetBuildUnitScore Combined: {ex}");
             }
         }
 
-        /*[HarmonyPostfix]
+        private static bool IsWaterUnderMyControl(GameState gameState, TileData startTile, PlayerState player)
+        {
+            // 如果起點根本不是水域，就談不上掌控，返回 false
+            if (!startTile.IsWater)
+            {
+                return false;
+            }
+
+            var queue = new Queue<WorldCoordinates>();
+            var visited = new HashSet<WorldCoordinates>();
+
+            queue.Enqueue(startTile.coordinates);
+            visited.Add(startTile.coordinates);
+
+            int maxIterations = 3000;
+            int iterations = 0;
+
+            while (queue.Count > 0 && iterations < maxIterations)
+            {
+                iterations++;
+                WorldCoordinates currentCoord = queue.Dequeue();
+                TileData currentTile = gameState.Map.GetTile(currentCoord);
+
+                if (currentTile == null) continue;
+
+                TileData[] neighbors = MapDataExtensions.GetAreaSorted(gameState.Map, currentCoord, 1, true, false);
+                for (int i = 0; i < neighbors.Length; i++)
+                {
+                    TileData neighbor = neighbors[i];
+                    if (neighbor == null) continue;
+
+                    if (neighbor.improvement != null && neighbor.improvement.type == ImprovementData.Type.City)
+                    {
+                        if (neighbor.owner != player.Id && neighbor.owner != 0)
+                        {
+                            return false;
+                        }
+                    }
+
+                    if (neighbor.IsWater && !visited.Contains(neighbor.coordinates))
+                    {
+                        visited.Add(neighbor.coordinates);
+                        queue.Enqueue(neighbor.coordinates);
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        [HarmonyPostfix]
         [HarmonyPatch(typeof(PathFinder), nameof(PathFinder.GetMoveOptions))]
-        private static void GetMoveOptions_StopSuicide(GameState gameState, WorldCoordinates start, int maxCost, UnitState unit, ref Il2CppSystem.Collections.Generic.List<WorldCoordinates> __result)
+        private static void GetMoveOptions_Combined(GameState gameState, WorldCoordinates start, int maxCost, UnitState unit, ref Il2CppSystem.Collections.Generic.List<WorldCoordinates> __result)
         {
             try
             {
@@ -467,24 +778,39 @@ namespace PolyMode
                     return;
                 }
 
-                if (!unit.HasAbility(UnitAbility.Type.Stiff)) return;
-
                 PlayerState player;
-                gameState.TryGetPlayer(unit.owner, out player);
+                if (!gameState.TryGetPlayer(unit.owner, out player)) return;
+                if (!player.AutoPlay) return;
 
-                // 1. Create a safe, temporary C# array snapshot of the results
+                var dangerousTiles = GetDangerousTilesInArea(gameState, player, start, maxCost + 6);
+
                 var optionsCopy = __result.ToArray();
-                // Loader.modLogger?.LogError($"[Conquest-AI] Success ToArray");
-
-                // 2. Iterate over the safe snapshot instead
                 foreach (WorldCoordinates option in optionsCopy)
                 {
-                    TileData tile = gameState.Map.GetTile(option);
-                    if (!IsTileSafe(gameState, player, tile))
+                    TileData origin = gameState.Map.GetTile(start);
+                    TileData target = gameState.Map.GetTile(option);
+
+                    // 1. Stop Suicide
+                    if (unit.UnitData.HasAbility(UnitAbility.Type.Stiff) && unit.type != UnitData.Type.Juggernaut && !unit.HasAbility(UnitAbility.Type.Infiltrate))
                     {
-                        // 3. It is now perfectly safe to remove from the original __result list
-                        // Loader.modLogger?.LogError($"[Conquest-AI] Tryna remove");
-                        __result.Remove(option);
+                        if (dangerousTiles.Contains(option))
+                        {
+                            __result.Remove(option);
+                        }
+
+                        if (!target.terrain.IsWater() && unit.type == UnitData.Type.Bombership)
+                        {
+                            __result.Remove(option);
+                        }
+                    }
+                    
+                    // 2. Stop playing water
+                    if (unit.UnitData.HasAbility(UnitAbility.Type.Carry) && unit.type != UnitData.Type.Bombership)
+                    {
+                        if (origin.terrain.IsWater() && target.terrain.IsWater() && IsWaterUnderMyControl(gameState, origin, player))
+                        {
+                            __result.Remove(option);
+                        }
                     }
                 }
             }
@@ -492,34 +818,324 @@ namespace PolyMode
             {
                 Loader.modLogger?.LogError($"[Conquest-AI] Error in GetMoveOptions: {ex}");
             }
-        }*/
+        }
 
-        public static bool IsTileSafe(GameState gameState, PlayerState player, TileData tile)
+        private static HashSet<WorldCoordinates> GetDangerousTilesInArea(GameState gameState, PlayerState player, WorldCoordinates center, int radius)
         {
-            TileData[] areaSorted = MapDataExtensions.GetAreaSorted(gameState.Map, tile.coordinates, 6, true, true);
-            foreach (TileData tile2 in areaSorted) {
-                if (tile2.unit != null && tile2.unit.owner != player.Id)
+            var dangerousTiles = new HashSet<WorldCoordinates>();
+            TileData[] nearbyTiles = MapDataExtensions.GetAreaSorted(gameState.Map, center, radius, true, true);
+            
+            for (int i = 0; i < nearbyTiles.Length; i++)
+            {
+                TileData enemyTile = nearbyTiles[i];
+                if (enemyTile.unit != null && enemyTile.unit.owner != player.Id)
                 {
-                    TileData[] areaSorted2 = MapDataExtensions.GetAreaSorted(gameState.Map, tile2.coordinates, 2, true, true);
-                    Il2CppSystem.Collections.Generic.List<WorldCoordinates> moveOptions = tile2.unit.GetMovementOptions(gameState, UnitDataExtensions.GetMovement(tile2.unit, gameState));
-                    Il2CppSystem.Collections.Generic.List<WorldCoordinates> attackOptions = tile2.unit.GetAttackOptions(gameState, UnitDataExtensions.GetRange(tile2.unit.UnitData));
+                    UnitState enemy = enemyTile.unit;
                     
-                    foreach (TileData tile3 in areaSorted2) {
-                        {
-                            if (moveOptions.Contains(tile3.coordinates) && tile2.unit.HasAbility(UnitAbility.Type.Dash))
-                            {
-                                return false;
-                            }
-                        }
+                    int movementRange = UnitDataExtensions.GetMovement(enemy, gameState);
+                    int attackRange = UnitDataExtensions.GetRange(enemy.UnitData);
+                    int totalThreatRadius = 0;
+
+                    if (enemy.HasAbility(UnitAbility.Type.Dash))
+                    {
+                        totalThreatRadius = movementRange + attackRange;
+                    }
+                    else
+                    {
+                        totalThreatRadius = Math.Max(movementRange, attackRange);
                     }
 
-                    if (attackOptions.Contains(tile.coordinates))
+                    TileData[] threatArea = MapDataExtensions.GetAreaSorted(gameState.Map, enemyTile.coordinates, totalThreatRadius, true, true);
+                    for (int j = 0; j < threatArea.Length; j++)
                     {
-                        return false;
+                        dangerousTiles.Add(threatArea[j].coordinates);
                     }
                 }
             }
-            return true;
+            return dangerousTiles;
+        }
+
+        private static bool IsTileDangerous(GameState gameState, PlayerState player, WorldCoordinates targetCoord, int scanRadius)
+        {
+            TileData[] nearbyTiles = MapDataExtensions.GetAreaSorted(gameState.Map, targetCoord, scanRadius, true, true);
+            
+            for (int i = 0; i < nearbyTiles.Length; i++)
+            {
+                TileData enemyTile = nearbyTiles[i];
+                if (enemyTile.unit != null && enemyTile.unit.owner != player.Id)
+                {
+                    UnitState enemy = enemyTile.unit;
+                    
+                    int movementRange = UnitDataExtensions.GetMovement(enemy, gameState);
+                    int attackRange = UnitDataExtensions.GetRange(enemy.UnitData);
+                    int totalThreatRadius = 0;
+
+                    if (enemy.HasAbility(UnitAbility.Type.Dash))
+                    {
+                        totalThreatRadius = movementRange + attackRange;
+                    }
+                    else
+                    {
+                        totalThreatRadius = Math.Max(movementRange, attackRange);
+                    }
+
+                    int distance = Math.Max(Math.Abs(enemyTile.coordinates.x - targetCoord.x), Math.Abs(enemyTile.coordinates.y - targetCoord.y));
+                    if (distance <= totalThreatRadius)
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        // =========================================================================
+        // D. Forced Get Methods
+        // =========================================================================
+        private static Il2CppSystem.Collections.Generic.List<CommandBase> ForceGetBuildableImprovements(GameState gameState, PlayerState player, TileData tile, bool includeUnavailable = false)
+        {		
+            Il2CppSystem.Collections.Generic.List<CommandBase> list = new Il2CppSystem.Collections.Generic.List<CommandBase>();
+            if (player.Id != gameState.CurrentPlayer)
+            {
+                return list;
+            }
+
+            GameLogicData data = new GameLogicData();
+            foreach (ImprovementData improvementData in gameState.GameLogicData.GetUnlockedImprovements(player))
+            {
+                if (!improvementData.HasAbility(ImprovementAbility.Type.Manual)
+                    //&& improvementData.type != tile.improvement.type
+                    && player.currency >= improvementData.cost
+                    && data.MeetsRequirement(tile, improvementData, player, gameState)
+                    && data.MeetsAdjacencyRequirement(gameState.Map, tile, improvementData.adjacencyRequirements))
+                {
+                    CommandBase commandBase = new BuildCommand(player.Id, improvementData.type, tile.coordinates);
+                    if (includeUnavailable || commandBase.IsValid(gameState))
+                    {
+                        list.Add(commandBase);
+                    }
+                }
+            }
+            return list;
+        }
+
+        private static float ForceGetImprovementScore(GameState gameState, ImprovementData improvementData, TileData tileData, PlayerState player)
+        {
+            float num = 0f;
+            int population = improvementData.rewards.GetPopulation();
+            num += (float)(population * 25);
+            num += (float)(improvementData.rewards.GetCurrency() * 2);
+            num += (float)(improvementData.work * 20);
+            if (improvementData.HasAbility(ImprovementAbility.Type.Patina))
+            {
+                population = improvementData.growthRewards.GetPopulation();
+                num += (float)(population * 100);
+            }
+            UnitData unit = improvementData.creates.GetUnit();
+            if (unit != null)
+            {
+                AI.UnitStats desiredUnitStats = AI.GetDesiredUnitStats(gameState, player, tileData);
+                num += AI.GetBuildUnitScore(gameState, player, unit, desiredUnitStats, tileData);
+            }
+            if (improvementData.adjacencyImprovements != null && improvementData.adjacencyImprovements.Count > 0)
+            {
+                int num2 = ActionUtils.GetAdjacencyBonusAt(gameState, tileData, improvementData);
+                if (improvementData.adjacencyImprovements.Contains(ImprovementData.Type.PolarisClimate))
+                {
+                    num2 += player.aiState.frozenTileCount / 20;
+                }
+                num += (float)(improvementData.growthRewards.GetPopulation() * 20 * num2);
+                num += (float)(improvementData.work * 20 * num2);
+            }
+            if (tileData.rulingCityCoordinates != WorldCoordinates.NULL_COORDINATES)
+            {
+                TileData tile = gameState.Map.GetTile(tileData.rulingCityCoordinates);
+                ImprovementState improvement = tile.improvement;
+                if (improvement != null && improvement.type == ImprovementData.Type.City && (int)improvement.xp + population > (int)improvement.level)
+                {
+                    num += 100f;
+                }
+                if (improvementData.IsRouteOpener())
+                {
+                    bool flag = false;
+                    foreach (TileData tileData2 in gameState.Map.GetArea(tile.coordinates, 1, true, false))
+                    {
+                        ImprovementData data;
+                        if (tileData2.improvement != null && gameState.GameLogicData.TryGetData(tileData2.improvement.type, out data) && data.IsRouteOpener())
+                        {
+                            flag = true;
+                            break;
+                        }
+                    }
+                    if (!tile.IsConnected && !flag)
+                    {
+                        num += 30f;
+                        if (tile.coordinates == player.startTile)
+                        {
+                            num += 50f;
+                        }
+                    }
+                }
+            }
+            if (gameState.Settings.RulesGameMode == (GameMode)1)
+            {
+                int score = improvementData.rewards.GetScore();
+                num += (float)score / 10f;
+            }
+            num += AI.GetImprovementAbilityScore(gameState, player, improvementData, tileData);
+            if (improvementData.type != ImprovementData.Type.Road && tileData.resource != null && !gameState.GameLogicData.IsResourceRequiredByImprovement(tileData.resource.type, improvementData))
+            {
+                num *= 0.5f;
+            }
+            return num;
+        }
+
+        public static CityAnalysisResult? ForceScanCornerForCitadel(
+            MapData map, 
+            GameState gameState,
+            TileData cityTile,
+            int searchRadius, 
+            bool searchFromCenter,
+            PlayerState currentOwner,
+            Faction findType = Faction.Both, // Default when searchFromCenter
+            bool findMost = true)            // Default when searchFromCenter
+        {
+            if (gameState == null || cityTile == null || map == null || currentOwner == null) return null;
+
+            Il2CppSystem.Collections.Generic.List<TileData> territoryTiles = ActionUtils.GetCityAreaSorted(gameState, cityTile);
+            if (territoryTiles == null || territoryTiles.Count == 0) return null;
+
+            var startingPoints = new System.Collections.Generic.Dictionary<string, TileData>();
+
+            if (searchFromCenter)
+            {
+                startingPoints.Add("CityCenter", cityTile);
+            }
+            else
+            {
+                TileData? topLeft = null;
+                TileData? topRight = null;
+                TileData? bottomLeft = null;
+                TileData? bottomRight = null;
+
+                float maxTR = float.MinValue, minBL = float.MaxValue;
+                float maxBR = float.MinValue, minTL = float.MaxValue;
+
+                foreach (var tile in territoryTiles)
+                {
+                    if (tile == null) continue;
+                    int x = tile.coordinates.X; 
+                    int y = tile.coordinates.Y;
+
+                    float sum = x + y;
+                    if (sum > maxTR) { maxTR = sum; topRight = tile; }
+                    if (sum < minBL) { minBL = sum; bottomLeft = tile; }
+
+                    float diff = x - y;
+                    if (diff > maxBR) { maxBR = diff; bottomRight = tile; }
+                    if (diff < minTL) { minTL = diff; topLeft = tile; }
+                }
+
+                if (topLeft != null && MapDataExtensions.DistanceToEdge(map, topLeft.coordinates) != 0) startingPoints["TopLeft"] = topLeft;
+                if (topRight != null && MapDataExtensions.DistanceToEdge(map, topRight.coordinates) != 0) startingPoints["TopRight"] = topRight;
+                if (bottomLeft != null && MapDataExtensions.DistanceToEdge(map, bottomLeft.coordinates) != 0) startingPoints["BottomLeft"] = bottomLeft;
+                if (bottomRight != null && MapDataExtensions.DistanceToEdge(map, bottomRight.coordinates) != 0) startingPoints["BottomRight"] = bottomRight;
+            }
+
+            CityAnalysisResult? bestResult = null;
+
+            foreach (var kvp in startingPoints)
+            {
+                string label = kvp.Key;
+                TileData startTile = kvp.Value;
+
+                if (startTile == null) continue;
+
+                /*bool canAccess = false;
+                Il2CppSystem.Collections.Generic.List<TerrainData> unlockedMovements = gameState.GameLogicData.GetUnlockedMovements(currentOwner);
+                foreach (var accessible in unlockedMovements)
+                {
+                    if (startTile.terrain == accessible.type)
+                    {
+                        canAccess = true;
+                        break;
+                    }
+                }
+                if (!canAccess) continue;*/
+
+                WorldCoordinates centerCoord = new WorldCoordinates(startTile.coordinates.X, startTile.coordinates.Y);
+                TileData[] areaTiles = map.GetAreaSorted(centerCoord, searchRadius, true, true);
+
+                int enemyCityCount = 0;
+                int ownedCityCount = 0; 
+
+                if (areaTiles != null)
+                {
+                    foreach (var areaTile in areaTiles)
+                    {
+                        if (areaTile == null || areaTile.improvement == null) continue;
+
+                        if (areaTile.improvement.type == ImprovementData.Type.City)
+                        {
+                            if (areaTile.coordinates.X == cityTile.coordinates.X && 
+                                areaTile.coordinates.Y == cityTile.coordinates.Y)
+                            {
+                                continue;
+                            }
+
+                            if (areaTile.owner != currentOwner.Id) 
+                            {
+                                enemyCityCount++; 
+                            }
+                            else
+                            {
+                                ownedCityCount++; 
+                            }
+                        }
+                    }
+                }
+
+                var currentResult = new CityAnalysisResult 
+                { 
+                    TargetTile = startTile, 
+                    EnemyCityCount = enemyCityCount,
+                    OwnedCityCount = ownedCityCount,
+                    TileTypeLabel = label
+                };
+
+                if (bestResult == null)
+                {
+                    bestResult = currentResult;
+                }
+                else
+                {
+                    int currentCount = findType switch
+                    {
+                        Faction.Enemy => currentResult.EnemyCityCount,
+                        Faction.Owned => currentResult.OwnedCityCount,
+                        Faction.Both  => currentResult.EnemyCityCount + currentResult.OwnedCityCount,
+                        _             => 0
+                    };
+
+                    int bestCount = findType switch
+                    {
+                        Faction.Enemy => bestResult.EnemyCityCount,
+                        Faction.Owned => bestResult.OwnedCityCount,
+                        Faction.Both  => bestResult.EnemyCityCount + bestResult.OwnedCityCount,
+                        _             => 0
+                    };
+
+                    if (findMost)
+                    {
+                        if (currentCount > bestCount) bestResult = currentResult;
+                    }
+                    else
+                    {
+                        if (currentCount < bestCount) bestResult = currentResult;
+                    }
+                }
+            }
+            return bestResult;
         }
     }
 }

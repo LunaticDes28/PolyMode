@@ -531,6 +531,7 @@ namespace PolyMode
                 {
                     return;
                 }
+                if (__instance.action == null) return;
 
                 PlayerState playerState;
                 GameManager.GameState.TryGetPlayer(__instance.action.PlayerId, out playerState);
@@ -540,9 +541,9 @@ namespace PolyMode
                 TileData tile = GameManager.GameState.Map.GetTile(__instance.action.Coordinates);
                 if (tile == null) return;
 
-                Tile instance = tile.GetInstance();
+                // Tile instance = tile.GetInstance();
 
-                Il2CppReferenceArray<TileData> areaSorted = GameManager.GameState.Map.GetAreaSorted(tile.coordinates, 3, true, true);
+                Il2CppReferenceArray<TileData> areaSorted = GameManager.GameState.Map.GetAreaSorted(tile.coordinates, 2, true, true);
                 if (areaSorted != null)
                 {
                     for (int i = areaSorted.Count - 1; i >= 0; i--)
@@ -555,7 +556,7 @@ namespace PolyMode
                     }
                 }
 
-                if (!GameManager.Client.IsReplay)
+                if (GameManager.Client != null && !GameManager.Client.IsReplay)
                 {
                     InputEvents.SelectionCleared();
                     ResourceManager.IncomeChanged(__instance.action.PlayerId);

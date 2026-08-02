@@ -93,17 +93,17 @@ namespace PolyMode
 
                 if (startTile == null) continue;
 
-                bool inaccessible = true;
+                /*bool canAccess = false;
                 Il2CppSystem.Collections.Generic.List<TerrainData> unlockedMovements = gameState.GameLogicData.GetUnlockedMovements(currentOwner);
                 foreach (var accessible in unlockedMovements)
                 {
                     if (startTile.terrain == accessible.type)
                     {
-                        inaccessible = false;
+                        canAccess = true;
                         break;
                     }
                 }
-                if (inaccessible) continue;
+                if (!canAccess) continue;*/
 
                 WorldCoordinates centerCoord = new WorldCoordinates(startTile.coordinates.X, startTile.coordinates.Y);
                 TileData[] areaTiles = map.GetAreaSorted(centerCoord, searchRadius, true, true);

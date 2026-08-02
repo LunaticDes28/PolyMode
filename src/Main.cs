@@ -789,7 +789,7 @@ namespace PolyMode
                         return;
                     }
 
-                    if (tile.terrain == TerrainData.Type.Water)
+                    if (tile.terrain == TerrainData.Type.Water || tile.terrain == TerrainData.Type.Ocean)
                     {
                         return;
                     }
@@ -853,7 +853,7 @@ namespace PolyMode
                     if (cityCenter == null) return true; 
 
                     Il2CppSystem.Collections.Generic.List<TileData> list = new Il2CppSystem.Collections.Generic.List<TileData>();
-                    TileData[] areaSorted = gameState.Map.GetAreaSorted(cityCenter.coordinates, 8, true, true);
+                    TileData[] areaSorted = gameState.Map.GetAreaSorted(cityCenter.coordinates, gameState.Settings.MapSize, true, true);
                     
                     if (areaSorted != null && areaSorted.Length > 0)
                     {
