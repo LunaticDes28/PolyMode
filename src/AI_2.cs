@@ -428,65 +428,11 @@ namespace PolyMode
             }
         }           
 
-        /*[HarmonyPostfix]
-        [HarmonyPatch(typeof(AI), nameof(AI.AddPossibleImprovementCommands))]
-        private static void AddPossibleImprovementCommands_Citadel(GameState gameState, PlayerState player, List<AI.ScoredCommand> possibleCommands)
-        {
-            try
-            {
-                foreach (TileData tileData in player.aiState.PlayerMapData.empireTiles)
-                {
-                    if (tileData.improvement != null)
-                    {
-                        //ImprovementData previousData;
-                        //gameState.GameLogicData.TryGetData(tileData.improvement.type, out previousData);
-                        //float num = AI.GetImprovementScore(gameState, previousData, tileData, player);
-                        //Loader.modLogger?.LogInfo($"[Conquest-AI] Old improvement is {tileData.improvement.name} with {num}.");
-
-                        ImprovementData citadelData;
-                        gameState.GameLogicData.TryGetData(EnumCache<ImprovementData.Type>.GetType("citadel"), out citadelData);
-                        float num2 = AI.GetImprovementScore(gameState, citadelData, tileData, player);
-                
-                        TileData[] nearbyTiles = gameState.Map.GetAreaSorted(tileData.coordinates, 3, true, true);
-
-                        int unclaimedCount = 0;
-                        if (nearbyTiles != null)
-                        {
-                            foreach (var tileInZone in nearbyTiles)
-                            {
-                                if (tileInZone != null && (tileInZone.owner == 0))
-                                {
-                                    unclaimedCount++;
-                                }
-                            }
-                        }
-
-                        Loader.modLogger?.LogInfo($"[Conquest-AI] Citadel improvement is Citadel with {unclaimedCount}.");
-
-                        if (unclaimedCount > 4)
-                        {
-                            CommandBase command = new DestroyCommand(player.Id, tileData.coordinates);
-                            possibleCommands.Add(new AI.ScoredCommand
-                            {
-                                command = command,
-                                score = 1000
-                            });
-                            Loader.modLogger?.LogInfo($"[Conquest-AI] Overrided old improvement when {unclaimedCount}.");
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Loader.modLogger?.LogError($"[Conquest-AI] Error in AddPossibleImprovementCommands: {ex}");
-            }
-        }*/    
-
         private static int lastProcessedTurn = -1;
         private static byte lastProcessedPlayer = 255;
         private static readonly HashSet<WorldCoordinates> processedTilesThisTurn = new HashSet<WorldCoordinates>();
 
-        [HarmonyPostfix]
+        /*[HarmonyPostfix]
         [HarmonyPatch(typeof(AI), nameof(AI.GetTileCommands))]
         private static void GetTileCommands_DestroyCmd(GameState gameState, PlayerState player, CommandType specificCommand, ref CommandBase __result)
         {
@@ -681,7 +627,7 @@ namespace PolyMode
             {
                 Loader.modLogger?.LogError($"[Conquest-AI] Error in GetTileCommands_DestroyCmd: {ex}");
             }
-        }
+        }*/
                     
         // =========================================================================
         // C. Military Behaviors
@@ -713,7 +659,7 @@ namespace PolyMode
                 }
 
                 // 2. Deny Closed Lake
-                if (tile.IsWater)
+                /*if (tile.IsWater)
                 {
                     var empireTiles = player.aiState?.PlayerMapData?.empireTiles;
                     if (empireTiles != null && empireTiles.Contains(tile))
@@ -732,7 +678,7 @@ namespace PolyMode
                             }
                         }
                     }
-                }
+                }*/
             }
             catch (Exception ex)
             {
@@ -829,13 +775,13 @@ namespace PolyMode
                     }
                     
                     // 2. Stop playing water
-                    if (unit.UnitData.HasAbility(UnitAbility.Type.Carry) && unit.type != UnitData.Type.Bombership)
+                    /*if (unit.UnitData.HasAbility(UnitAbility.Type.Carry) && unit.type != UnitData.Type.Bombership)
                     {
                         if (origin.terrain.IsWater() && target.terrain.IsWater() && IsWaterUnderMyControl(gameState, origin, player))
                         {
                             __result.Remove(option);
                         }
-                    }
+                    }*/
                 }
             }
             catch (Exception ex)
