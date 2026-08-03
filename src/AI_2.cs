@@ -432,7 +432,7 @@ namespace PolyMode
         private static byte lastProcessedPlayer = 255;
         private static readonly HashSet<WorldCoordinates> processedTilesThisTurn = new HashSet<WorldCoordinates>();
 
-        /*[HarmonyPostfix]
+        [HarmonyPostfix]
         [HarmonyPatch(typeof(AI), nameof(AI.GetTileCommands))]
         private static void GetTileCommands_DestroyCmd(GameState gameState, PlayerState player, CommandType specificCommand, ref CommandBase __result)
         {
@@ -508,7 +508,23 @@ namespace PolyMode
                         float num = ForceGetImprovementScore(gameState, previousData, tileData, player);
                         num = (float)Math.Round(num);
                         string name = previousData.type.GetDisplayName();
-                        //Loader.modLogger?.LogInfo($"[Conquest-AI] Old previous improvement is {name} with {num}.");
+
+                        if ((num > 0f && previousData.rewards.GetPopulation() > 0) || previousData.growthRewards.GetPopulation() > 0)
+                        {
+                            TileData tile = gameState.Map.GetTile(tileData.rulingCityCoordinates);
+                            if (tile.CanCityBeUpgraded(gameState))
+                            {
+                                int num3 = tile.PopulationNeededToUpgradeCity() - previousData.CalculateImprovementPopulationAtLevel((int)tileData.improvement.level);
+                                if (num3 > 0)
+                                {
+                                    num += (float)(200 / num3);
+                                }
+                            }
+                        }
+
+                        num *= AI.getPriceFactor(previousData.cost, player);
+                        num = (float)Math.Round(num);
+                        Loader.modLogger?.LogInfo($"[Conquest-AI] Old previous improvement is {name} with {num}.");
 
                         foreach (CommandBase commandBase in ForceGetBuildableImprovements(gameState, player, tileData, true))
                         {
@@ -558,7 +574,7 @@ namespace PolyMode
                                 TileData tile = gameState.Map.GetTile(tileData.rulingCityCoordinates);
                                 if (tile.CanCityBeUpgraded(gameState))
                                 {
-                                    int num3 = tile.PopulationNeededToUpgradeCity();
+                                    int num3 = tile.PopulationNeededToUpgradeCity() - previousData.CalculateImprovementPopulationAtLevel((int)tileData.improvement.level);
                                     if (num3 > 0)
                                     {
                                         num2 += (float)(200 / num3);
@@ -568,7 +584,7 @@ namespace PolyMode
 
                             num2 *= AI.getPriceFactor(currentData.cost, player);
                             num2 = (float)Math.Round(num2);
-                            //Loader.modLogger?.LogInfo($"[Conquest-AI] New possible improvement is {name2} with {num2}.");
+                            Loader.modLogger?.LogInfo($"[Conquest-AI] New possible improvement is {name2} with {num2}.");
 
                             if (num2 > num && num2 > 150
                                 && !previousData.type.IsMonument() && !previousData.type.IsTemple()
@@ -610,16 +626,16 @@ namespace PolyMode
                     {
                         //Loader.modLogger?.LogInfo($"[Conquest-AI] Best replacement for {globalOldName} at {globalBestDestroyCmd.Coordinates} is a resource ({globalNewName}). Destroy command safely denied.");
                     }
-                    else if (bestOldType?.type == ImprovementData.Type.Bridge)
+                    /*else if (bestOldType?.type == ImprovementData.Type.Bridge)
                     {
                         //Loader.modLogger?.LogInfo($"[Conquest-AI] Trying to replace {globalOldName} at {globalBestDestroyCmd.Coordinates}. Destroy command safely denied.");
-                    }
+                    }*/
                     else if (!(cmdTile.unit != null && cmdTile.unit.owner != cmdTile.owner))
                     {
                         processedTilesThisTurn.Add(globalBestDestroyCmd.Coordinates);
 
                         __result = globalBestDestroyCmd;
-                        //Loader.modLogger?.LogInfo($"[Conquest-AI] Globally selected best conversion at {globalBestDestroyCmd.Coordinates}: Destroying {globalOldName} ({globalOldScore}) to clear path for {globalNewName} ({globalNewScore}) [Net Gain: +{globalBestScoreDifference}].");
+                        Loader.modLogger?.LogInfo($"[Conquest-AI] Globally selected best conversion at {globalBestDestroyCmd.Coordinates}: Destroying {globalOldName} ({globalOldScore}) to clear path for {globalNewName} ({globalNewScore}) [Net Gain: +{globalBestScoreDifference}].");
                     }
                 }
             }
@@ -627,7 +643,7 @@ namespace PolyMode
             {
                 Loader.modLogger?.LogError($"[Conquest-AI] Error in GetTileCommands_DestroyCmd: {ex}");
             }
-        }*/
+        }
                     
         // =========================================================================
         // C. Military Behaviors
@@ -659,7 +675,7 @@ namespace PolyMode
                 }
 
                 // 2. Deny Closed Lake
-                /*if (tile.IsWater)
+                if (tile.IsWater)
                 {
                     var empireTiles = player.aiState?.PlayerMapData?.empireTiles;
                     if (empireTiles != null && empireTiles.Contains(tile))
@@ -678,7 +694,7 @@ namespace PolyMode
                             }
                         }
                     }
-                }*/
+                }
             }
             catch (Exception ex)
             {
@@ -738,7 +754,7 @@ namespace PolyMode
 
         [HarmonyPostfix]
         [HarmonyPatch(typeof(PathFinder), nameof(PathFinder.GetMoveOptions))]
-        private static void GetMoveOptions_Combined(GameState gameState, WorldCoordinates start, int maxCost, UnitState unit, ref Il2CppSystem.Collections.Generic.List<WorldCoordinates> __result)
+        private static void GetMoveOptions_StopSuicide(GameState gameState, WorldCoordinates start, int maxCost, UnitState unit, ref Il2CppSystem.Collections.Generic.List<WorldCoordinates> __result)
         {
             try
             {
@@ -760,7 +776,6 @@ namespace PolyMode
                     TileData origin = gameState.Map.GetTile(start);
                     TileData target = gameState.Map.GetTile(option);
 
-                    // 1. Stop Suicide
                     if (unit.UnitData.HasAbility(UnitAbility.Type.Stiff) && unit.type != UnitData.Type.Juggernaut && !unit.HasAbility(UnitAbility.Type.Infiltrate))
                     {
                         if (dangerousTiles.Contains(option))
@@ -773,15 +788,6 @@ namespace PolyMode
                             __result.Remove(option);
                         }
                     }
-                    
-                    // 2. Stop playing water
-                    /*if (unit.UnitData.HasAbility(UnitAbility.Type.Carry) && unit.type != UnitData.Type.Bombership)
-                    {
-                        if (origin.terrain.IsWater() && target.terrain.IsWater() && IsWaterUnderMyControl(gameState, origin, player))
-                        {
-                            __result.Remove(option);
-                        }
-                    }*/
                 }
             }
             catch (Exception ex)
@@ -917,11 +923,12 @@ namespace PolyMode
                 num += (float)(improvementData.growthRewards.GetPopulation() * 20 * num2);
                 num += (float)(improvementData.work * 20 * num2);
             }
+
             if (tileData.rulingCityCoordinates != WorldCoordinates.NULL_COORDINATES)
             {
                 TileData tile = gameState.Map.GetTile(tileData.rulingCityCoordinates);
                 ImprovementState improvement = tile.improvement;
-                if (improvement != null && improvement.type == ImprovementData.Type.City && (int)improvement.xp + population > (int)improvement.level)
+                if (improvement != null && improvement.type == ImprovementData.Type.City && (int)improvement.xp + population > (int)improvement.level - improvementData.CalculateImprovementPopulationAtLevel((int)tileData.improvement.level))
                 {
                     num += 100f;
                 }
