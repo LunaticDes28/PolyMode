@@ -1,50 +1,44 @@
 using HarmonyLib;
-using Il2CppInterop.Runtime.Runtime;
 using Polytopia.Data;
 using PolytopiaBackendBase;
 using PolytopiaBackendBase.Game;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 
 namespace PolyMode
 {
     public static class AI_2
     {
-        // Toggle this to true only when you need debug logs
-        private const bool DEBUG_AI = true;
-
         // =========================================================================
-        // Caches (cleared / updated per turn)
+        // Caches
         // =========================================================================
         private static int lastProcessedTurn = -1;
         private static byte lastProcessedPlayer = 255;
         private static readonly HashSet<WorldCoordinates> processedTilesThisTurn = new HashSet<WorldCoordinates>();
 
-        // City → best citadel corner (lives across turns until borders change)
-        private static readonly Dictionary<WorldCoordinates, TileData> cityCitadelCornerCache = new Dictionary<WorldCoordinates, TileData>();
+        private static readonly Dictionary<WorldCoordinates, TileData> cityCitadelCornerCache =
+            new Dictionary<WorldCoordinates, TileData>();
         private static int citadelCacheTurn = -1;
 
-        // Dangerous tiles cache per player+turn
-        private static readonly Dictionary<byte, HashSet<WorldCoordinates>> dangerousTilesCache = new Dictionary<byte, HashSet<WorldCoordinates>>();
+        private static readonly Dictionary<byte, HashSet<WorldCoordinates>> dangerousTilesCache =
+            new Dictionary<byte, HashSet<WorldCoordinates>>();
         private static int dangerousCacheTurn = -1;
+        private static bool skipMoveOptionsPatch = false;
 
         // =========================================================================
-        // A. Diplomacy Behaviors
+        // A. Diplomacy
         // =========================================================================
         [HarmonyPrefix]
         [HarmonyPatch(typeof(AI), nameof(AI.GetGameProgress))]
-        private static bool GetGameProgress_Conquest(ref float __result, GameState gameState, PlayerState winningPlayer)
+        private static bool GetGameProgress_Conquest(
+            ref float __result, GameState gameState, PlayerState winningPlayer)
         {
             if (gameState?.Settings == null) return true;
-
             try
             {
                 if (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
                     && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
-                {
                     return true;
-                }
 
                 if (winningPlayer == null)
                 {
@@ -52,14 +46,14 @@ namespace PolyMode
                     return false;
                 }
 
-                float totalCities = Math.Max(0.1f, (float)MapDataExtensions.CountCities(gameState));
-                float cityProgress = (float)winningPlayer.cities / totalCities;
+                float totalCities = Math.Max(0.1f, MapDataExtensions.CountCities(gameState));
+                float cityProgress = winningPlayer.cities / totalCities;
                 __result = Math.Min(1f, Math.Max(0f, cityProgress));
                 return false;
             }
             catch (Exception ex)
             {
-                Loader.modLogger?.LogError($"[Conquest-AI] Error in GetGameProgress detour: {ex.Message}");
+                Loader.modLogger?.LogError($"[Conquest-AI] GetGameProgress: {ex.Message}");
                 __result = 0f;
                 return false;
             }
@@ -67,7 +61,8 @@ namespace PolyMode
 
         [HarmonyPostfix]
         [HarmonyPatch(typeof(OpinionManager), nameof(OpinionManager.UpdateOpinion))]
-        private static void UpdateOpinion_Cities(OpinionManager __instance, GameState gameState, PlayerState player, PlayerState opponent)
+        private static void UpdateOpinion_Cities(
+            OpinionManager __instance, GameState gameState, PlayerState player, PlayerState opponent)
         {
             if (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
                 && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
@@ -76,21 +71,24 @@ namespace PolyMode
             if (player == opponent || player.Id == 255 || opponent.Id == 255 || !opponent.IsAlive(gameState))
                 return;
 
-            if (player.GetRelation(opponent.Id).FirstMeet < 0 && opponent.GetRelation(player.Id).LastAttackTurn < 0)
+            if (player.GetRelation(opponent.Id).FirstMeet < 0
+                && opponent.GetRelation(player.Id).LastAttackTurn < 0)
                 return;
 
             float cityAdvantage = opponent.GetCityAdvantage(gameState);
             if (cityAdvantage <= 0f) return;
 
-            float hate = cityAdvantage * 1f;
-            OpinionState opinionState = new OpinionState();
+            float hate = cityAdvantage;
+            var opinionState = new OpinionState();
             opinionState.AddOpinion(hate * 2.3f, EnumCache<OpinionManager.Type>.GetType("obstinate"));
             opinionState.AddOpinion(hate * 1.2f, OpinionManager.Type.Winning);
 
             if (!__instance.Opinions.ContainsKey(opponent.Id))
                 __instance.Opinions[opponent.Id] = new OpinionState();
 
-            __instance.Opinions[opponent.Id].AddOpinion(opinionState.GetOpinion(OpinionManager.Type.Winning) * -1f, OpinionManager.Type.Winning);
+            __instance.Opinions[opponent.Id].AddOpinion(
+                opinionState.GetOpinion(OpinionManager.Type.Winning) * -1f,
+                OpinionManager.Type.Winning);
             __instance.Opinions[opponent.Id].AddOpinion(
                 opinionState.GetOpinion(EnumCache<OpinionManager.Type>.GetType("obstinate")) * -1f,
                 EnumCache<OpinionManager.Type>.GetType("obstinate"));
@@ -98,7 +96,8 @@ namespace PolyMode
 
         [HarmonyPostfix]
         [HarmonyPatch(typeof(AI), nameof(AI.RateBattle))]
-        private static void RateBattle_Cities(GameState gameState, UnitState attackingUnit, TileData defendingTile, ref float __result)
+        private static void RateBattle_Cities(
+            GameState gameState, UnitState attackingUnit, TileData defendingTile, ref float __result)
         {
             if (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
                 && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
@@ -115,10 +114,10 @@ namespace PolyMode
         {
             int total = 0;
             int count = 0;
-            foreach (PlayerState p in state.PlayerStates)
+            foreach (PlayerState player in state.PlayerStates)
             {
-                if (p.Id == 255) continue;
-                total += p.IsAlive(state) ? p.CountCities(state) : 0;
+                if (player.Id == 255) continue;
+                total += player.IsAlive(state) ? player.CountCities(state) : 0;
                 count++;
             }
             return count > 0 ? (float)total / count : 0f;
@@ -130,33 +129,32 @@ namespace PolyMode
         }
 
         // =========================================================================
-        // B. Development Behaviors
+        // B. Development
         // =========================================================================
         [HarmonyPostfix]
         [HarmonyPatch(typeof(AI), nameof(AI.ChooseCityReward))]
-        private static void ChooseCityReward_Conquest(GameState gameState, TileData tile, CityReward[] rewards, ref CityReward __result)
+        private static void ChooseCityReward_Conquest(
+            GameState gameState, TileData tile, CityReward[] rewards, ref CityReward __result)
         {
             if (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
                 && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
                 return;
 
             if (!gameState.TryGetPlayer(tile.owner, out PlayerState playerState)
-                || !gameState.GameLogicData.TryGetData(playerState.tribe, out TribeData tribeData))
+                || !gameState.GameLogicData.TryGetData(playerState.tribe, out TribeData _))
                 return;
 
-            System.Random random = new System.Random();
+            var random = new System.Random();
 
             if (tile.improvement.level == 2)
             {
-                CityAnalysisResult? centerResult = MapAnalysis.ScanCity(gameState.Map, gameState, tile, 3, true, playerState);
+                var centerResult = MapAnalysis.ScanCityFromCenter(
+                    gameState.Map, gameState, tile, 3, playerState);
 
-                if (centerResult != null && centerResult.EnemyCityCount >= 2
+                if (centerResult != null
+                    && centerResult.EnemyCityCount >= 2
                     && centerResult.EnemyCityCount - centerResult.OwnedCityCount >= 2)
                 {
-                    if (DEBUG_AI)
-                    {
-                        Loader.modLogger?.LogInfo($"[Conquest-Evacuation] Isolated city at ({tile.coordinates.X},{tile.coordinates.Y}) → Evacuation");
-                    }
                     __result = EnumCache<CityReward>.GetType("evacuation");
                 }
                 else if (tile.unit != null && tile.unit.owner != playerState.Id)
@@ -170,31 +168,24 @@ namespace PolyMode
             }
             else if (tile.improvement.level == 3)
             {
-                int num = random.Next(0, 3);
-                if (num == 0) __result = CityReward.CityWall;
-                else if (num == 1) __result = CityReward.Resources;
+                int roll = random.Next(0, 3);
+                if (roll == 0) __result = CityReward.CityWall;
+                else if (roll == 1) __result = CityReward.Resources;
                 else __result = EnumCache<CityReward>.GetType("valhalla");
             }
             else if (tile.improvement.level == 4)
             {
-                CityAnalysisResult? farResult = MapAnalysis.ScanCity(gameState.Map, gameState, tile, 8, true, playerState);
+                var centerResult = MapAnalysis.ScanCityFromCenter(
+                    gameState.Map, gameState, tile, 8, playerState);
 
-                if (farResult != null && farResult.EnemyCityCount == 0 && playerState.cities >= 4)
-                {
-                    if (DEBUG_AI)
-                    {
-                        Loader.modLogger?.LogInfo($"[Conquest-Tax] Protected city at ({tile.coordinates.X},{tile.coordinates.Y}) → Tax Reform");
-                    }
+                if (centerResult != null && centerResult.EnemyCityCount == 0 && playerState.cities >= 4)
                     __result = EnumCache<CityReward>.GetType("taxreform");
-                }
-                else if (farResult != null && farResult.OwnedCityCount >= 5)
-                {
+                else if (centerResult != null && centerResult.OwnedCityCount >= 5)
                     __result = EnumCache<CityReward>.GetType("taxreform");
-                }
                 else
-                {
-                    __result = random.Next(0, 2) == 0 ? CityReward.BorderGrowth : CityReward.PopulationGrowth;
-                }
+                    __result = random.Next(0, 2) == 0
+                        ? CityReward.BorderGrowth
+                        : CityReward.PopulationGrowth;
             }
             else if (tile.improvement.level >= 5)
             {
@@ -204,28 +195,31 @@ namespace PolyMode
 
         [HarmonyPostfix]
         [HarmonyPatch(typeof(AI), nameof(AI.GetImprovementScore))]
-        private static void GetImprovementScore_Citadel(GameState gameState, ImprovementData improvementData, TileData tileData, PlayerState player, ref float __result)
+        private static void GetImprovementScore_Citadel(
+            GameState gameState,
+            ImprovementData improvementData,
+            TileData tileData,
+            PlayerState player,
+            ref float __result)
         {
             if (gameState == null || tileData == null || player == null) return;
 
-            // Only run expensive logic for the citadel itself
             if (improvementData.type != EnumCache<ImprovementData.Type>.GetType("citadel")
                 && !gameState.GameLogicData.IsUnlocked(improvementData.type, player))
                 return;
 
             try
             {
-                float num = 0f;
+                float score = 0f;
                 TileData rulingCity = gameState.Map.GetTile(tileData.rulingCityCoordinates);
                 if (rulingCity == null || rulingCity.improvement == null) return;
 
-                // Use cached corner if available
                 EnsureCitadelCache(gameState, player);
 
-                if (cityCitadelCornerCache.TryGetValue(rulingCity.coordinates, out TileData? targetedCornerTile)
-                    && targetedCornerTile != null
-                    && tileData.coordinates.X == targetedCornerTile.coordinates.X
-                    && tileData.coordinates.Y == targetedCornerTile.coordinates.Y)
+                if (cityCitadelCornerCache.TryGetValue(rulingCity.coordinates, out TileData? targetedCorner)
+                    && targetedCorner != null
+                    && tileData.coordinates.X == targetedCorner.coordinates.X
+                    && tileData.coordinates.Y == targetedCorner.coordinates.Y)
                 {
                     int expansionRadius = rulingCity.improvement.borderSize;
                     TileData[] nearbyTiles = gameState.Map.GetAreaSorted(
@@ -235,40 +229,41 @@ namespace PolyMode
                     int unclaimedCount = 0;
                     if (nearbyTiles != null)
                     {
-                        foreach (var t in nearbyTiles)
-                            if (t != null && t.owner == 0) unclaimedCount++;
+                        foreach (var nearbyTile in nearbyTiles)
+                        {
+                            if (nearbyTile != null && nearbyTile.owner == 0)
+                                unclaimedCount++;
+                        }
                     }
 
-                    float totalStrategicScore = unclaimedCount * 80f;
-
-                    // Simple military bonus (avoid another full ScanCity here)
-                    totalStrategicScore += 0f; // keep light; heavy scan already done in cache
-
-                    num += totalStrategicScore;
-
+                    score += unclaimedCount * 80f;
                     if (rulingCity.improvement.borderSize == 2)
-                        num *= 0.5f;
+                        score *= 0.5f;
                 }
                 else
                 {
-                    num *= 0.1f;
+                    score *= 0.1f;
                 }
 
-                num *= AI.getPriceFactor(improvementData.cost, player);
-                __result = num;
+                score *= AI.getPriceFactor(improvementData.cost, player);
+                __result = score;
             }
             catch (Exception ex)
             {
-                Loader.modLogger?.LogError($"[Conquest-AI] Error in GetImprovementScore: {ex}");
+                Loader.modLogger?.LogError($"[Conquest-AI] GetImprovementScore: {ex}");
             }
         }
 
         // =========================================================================
-        // Destroy / Rebuild logic (heavily throttled)
+        // Destroy / rebuild
         // =========================================================================
         [HarmonyPostfix]
         [HarmonyPatch(typeof(AI), nameof(AI.GetTileCommands))]
-        private static void GetTileCommands_DestroyCmd(GameState gameState, PlayerState player, CommandType specificCommand, ref CommandBase __result)
+        private static void GetTileCommands_DestroyCmd(
+            GameState gameState,
+            PlayerState player,
+            CommandType specificCommand,
+            ref CommandBase __result)
         {
             try
             {
@@ -277,13 +272,12 @@ namespace PolyMode
                     return;
 
                 if (__result == null) return;
-                if (player.Currency < 30) return;                 // not worth evaluating
-                if (gameState.CurrentTurn % 2 != 0) return;       // only every 2 turns
+                if (player.Currency < 30) return;
+                if (gameState.CurrentTurn % 2 != 0) return;
 
                 var empireTiles = player.aiState?.PlayerMapData?.empireTiles;
                 if (empireTiles == null) return;
 
-                // Reset per-turn tracking
                 if (gameState.CurrentTurn != lastProcessedTurn || player.Id != lastProcessedPlayer)
                 {
                     lastProcessedTurn = (int)gameState.CurrentTurn;
@@ -293,26 +287,25 @@ namespace PolyMode
 
                 EnsureCitadelCache(gameState, player);
 
-                float globalBestScoreDifference = 0f;
-                DestroyCommand? globalBestDestroyCmd = null;
-                string globalOldName = "", globalNewName = "";
-                float globalOldScore = 0f, globalNewScore = 0f;
+                float bestScoreDifference = 0f;
+                DestroyCommand? bestDestroyCommand = null;
+                ImprovementData? bestOldType = null;
+                ImprovementData? bestNewType = null;
+
+                var citadelType = EnumCache<ImprovementData.Type>.GetType("citadel");
 
                 foreach (TileData tileData in empireTiles)
                 {
                     if (tileData == null || tileData.improvement == null) continue;
                     if (tileData.improvement.type == ImprovementData.Type.City
                         || tileData.improvement.type == ImprovementData.Type.LightHouse
-                        || tileData.improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel"))
+                        || tileData.improvement.type == citadelType)
                         continue;
-
                     if (processedTilesThisTurn.Contains(tileData.coordinates)) continue;
-
                     if (!gameState.GameLogicData.TryGetData(tileData.improvement.type, out ImprovementData previousData))
                         continue;
 
-                    float oldScore = ForceGetImprovementScore(gameState, previousData, tileData, player);
-                    oldScore = (float)Math.Round(oldScore);
+                    float oldScore = MathF.Round(ForceGetImprovementScore(gameState, previousData, tileData, player));
 
                     if ((oldScore > 0f && previousData.rewards.GetPopulation() > 0)
                         || previousData.growthRewards.GetPopulation() > 0)
@@ -325,8 +318,8 @@ namespace PolyMode
                             if (needed > 0) oldScore += 200f / needed;
                         }
                     }
-                    oldScore *= AI.getPriceFactor(previousData.cost, player);
-                    oldScore = (float)Math.Round(oldScore);
+
+                    oldScore = MathF.Round(oldScore * AI.getPriceFactor(previousData.cost, player));
 
                     foreach (CommandBase commandBase in ForceGetBuildableImprovements(gameState, player, tileData, true))
                     {
@@ -336,26 +329,32 @@ namespace PolyMode
 
                         float newScore = ForceGetImprovementScore(gameState, currentData, tileData, player);
 
-                        // Special citadel scoring from cache
-                        if (currentData.type == EnumCache<ImprovementData.Type>.GetType("citadel"))
+                        if (currentData.type == citadelType)
                         {
                             TileData capital = gameState.Map.GetTile(tileData.rulingCityCoordinates);
-                            if (cityCitadelCornerCache.TryGetValue(tileData.rulingCityCoordinates, out TileData? corner)
-                                && corner != null
-                                && tileData.coordinates.X == corner.coordinates.X
-                                && tileData.coordinates.Y == corner.coordinates.Y)
+                            int citadelCount = Main.CountCityCitadel(gameState, tileData);
+                            if (Main.CityHasMaxCitadel(gameState, tileData, player, citadelCount))
+                                continue;
+
+                            if (!cityCitadelCornerCache.TryGetValue(tileData.rulingCityCoordinates, out TileData? corner)
+                                || corner == null
+                                || tileData.coordinates.X != corner.coordinates.X
+                                || tileData.coordinates.Y != corner.coordinates.Y)
+                                continue;
+
+                            int unclaimed = 0;
+                            TileData[] nearby = MapDataExtensions.GetAreaSorted(
+                                gameState.Map, tileData.coordinates, capital.improvement.borderSize, true, true);
+                            if (nearby != null)
                             {
-                                int unclaimed = 0;
-                                TileData[] nearby = MapDataExtensions.GetAreaSorted(
-                                    gameState.Map, tileData.coordinates, capital.improvement.borderSize, true, true);
-                                if (nearby != null)
+                                for (int i = 0; i < nearby.Length; i++)
                                 {
-                                    for (int i = 0; i < nearby.Length; i++)
-                                        if (nearby[i] != null && nearby[i].owner == 0) unclaimed++;
+                                    if (nearby[i] != null && nearby[i].owner == 0)
+                                        unclaimed++;
                                 }
-                                newScore = (float)(unclaimed * 75 / Math.Pow(capital.improvement.borderSize, 1.5));
                             }
-                            else continue;
+
+                            newScore = (float)(unclaimed * 75 / Math.Pow(capital.improvement.borderSize, 1.5));
                         }
 
                         if ((newScore > 0f && currentData.rewards.GetPopulation() > 0)
@@ -370,140 +369,172 @@ namespace PolyMode
                             }
                         }
 
-                        newScore *= AI.getPriceFactor(currentData.cost, player);
-                        newScore = (float)Math.Round(newScore);
+                        newScore = MathF.Round(newScore * AI.getPriceFactor(currentData.cost, player));
 
                         if (newScore > oldScore && newScore > 150
-                            && !previousData.type.IsMonument() && !previousData.type.IsTemple()
-                            && !currentData.type.IsMonument() && !currentData.type.IsTemple())
+                            && !previousData.type.IsMonument()
+                            && !currentData.type.IsMonument())
                         {
-                            float diff = newScore - oldScore;
-                            if (diff > globalBestScoreDifference)
+                            float difference = newScore - oldScore;
+                            if (difference > bestScoreDifference)
                             {
-                                DestroyCommand destroyCmd = new DestroyCommand(player.Id, tileData.coordinates);
-                                if (destroyCmd.IsValid(gameState))
+                                var destroyCommand = new DestroyCommand(player.Id, tileData.coordinates);
+                                if (destroyCommand.IsValid(gameState))
                                 {
-                                    globalBestScoreDifference = diff;
-                                    globalBestDestroyCmd = destroyCmd;
-                                    globalOldName = previousData.type.GetDisplayName();
-                                    globalNewName = currentData.type.GetDisplayName();
-                                    globalOldScore = oldScore;
-                                    globalNewScore = newScore;
+                                    bestScoreDifference = difference;
+                                    bestDestroyCommand = destroyCommand;
+                                    bestOldType = previousData;
+                                    bestNewType = currentData;
                                 }
                             }
                         }
                     }
                 }
 
-                if (globalBestDestroyCmd != null)
-                {
-                    TileData cmdTile = gameState.Map.GetTile(globalBestDestroyCmd.Coordinates);
-                    if (!(cmdTile.unit != null && cmdTile.unit.owner != cmdTile.owner))
-                    {
-                        processedTilesThisTurn.Add(globalBestDestroyCmd.Coordinates);
-                        __result = globalBestDestroyCmd;
+                if (bestDestroyCommand == null) return;
 
-                        if (DEBUG_AI)
-                        {
-                            Loader.modLogger?.LogInfo(
-                                $"[Conquest-AI] Destroy {globalOldName} ({globalOldScore}) → {globalNewName} ({globalNewScore}) " +
-                                $"[+{globalBestScoreDifference}] at {globalBestDestroyCmd.Coordinates}");
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Loader.modLogger?.LogError($"[Conquest-AI] Error in GetTileCommands_DestroyCmd: {ex}");
-            }
-        }
+                TileData commandTile = gameState.Map.GetTile(bestDestroyCommand.Coordinates);
 
-        // =========================================================================
-        // C. Military Behaviors
-        // =========================================================================
-        [HarmonyPostfix]
-        [HarmonyPatch(typeof(AI), nameof(AI.GetBuildUnitScore))]
-        private static void GetBuildUnitScore_Combined(GameState gameState, PlayerState player, UnitData unit, AI.UnitStats desiredUnitStats, ref float __result, TileData? tile = null)
-        {
-            try
-            {
-                if (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
-                    && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                if (bestOldType != null && bestNewType != null && bestOldType.type == bestNewType.type)
                     return;
 
-                if (!player.AutoPlay || tile == null) return;
+                if (bestNewType != null && bestNewType.HasAbility(ImprovementAbility.Type.Consumed))
+                    return;
 
-                if (unit.HasAbility(UnitAbility.Type.Stiff))
-                {
-                    if (IsTileDangerous(gameState, player, tile.coordinates, 6))
-                    {
-                        __result = 0f;
-                        return;
-                    }
-                }
+                if (commandTile.unit != null && commandTile.unit.owner != commandTile.owner)
+                    return;
 
-                if (tile.IsWater)
-                {
-                    var empireTiles = player.aiState?.PlayerMapData?.empireTiles;
-                    if (empireTiles != null && empireTiles.Contains(tile) && IsWaterUnderMyControl(gameState, tile, player))
-                    {
-                        if (unit.type == UnitData.Type.Rammership)
-                            __result = 0f;
-                        else if (unit.type == UnitData.Type.Bombership || unit.type == UnitData.Type.Scout)
-                            __result *= 0.5f;
-                    }
-                }
+                processedTilesThisTurn.Add(bestDestroyCommand.Coordinates);
+                __result = bestDestroyCommand;
             }
             catch (Exception ex)
             {
-                Loader.modLogger?.LogError($"[Conquest-AI] Error in GetBuildUnitScore: {ex}");
+                Loader.modLogger?.LogError($"[Conquest-AI] GetTileCommands_DestroyCmd: {ex}");
             }
         }
 
+        // =========================================================================
+        // C. Military — prevent stiff suicide
+        // =========================================================================
         [HarmonyPostfix]
         [HarmonyPatch(typeof(PathFinder), nameof(PathFinder.GetMoveOptions))]
-        private static void GetMoveOptions_StopSuicide(GameState gameState, WorldCoordinates start, int maxCost, UnitState unit, ref Il2CppSystem.Collections.Generic.List<WorldCoordinates> __result)
+        private static void GetMoveOptions_PreventSuicide(
+            GameState gameState,
+            WorldCoordinates start,
+            int maxCost,
+            UnitState unit,
+            ref Il2CppSystem.Collections.Generic.List<WorldCoordinates> __result)
         {
+            if (skipMoveOptionsPatch)
+                return;
+
             try
             {
-                if (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
-                    && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                if (gameState?.Settings == null || unit == null || __result == null)
+                    return;
+
+                var mode = gameState.Settings.RulesGameMode;
+                if (mode != EnumCache<GameMode>.GetType("conquest")
+                    && mode != EnumCache<GameMode>.GetType("reign"))
                     return;
 
                 if (!gameState.TryGetPlayer(unit.owner, out PlayerState player) || !player.AutoPlay)
                     return;
 
-                // Only filter stiff units (or bombership)
-                if (!unit.UnitData.HasAbility(UnitAbility.Type.Stiff) && unit.type != UnitData.Type.Bombership)
+                if (!unit.UnitData.HasAbility(UnitAbility.Type.Stiff)
+                    || unit.type == UnitData.Type.Juggernaut
+                    || unit.HasAbility(UnitAbility.Type.Infiltrate))
                     return;
 
-                var dangerousTiles = GetDangerousTilesCached(gameState, player, start, maxCost + 6);
+                // Snapshot before filtering
+                var originalOptions = new List<WorldCoordinates>();
+                for (int i = 0; i < __result.Count; i++)
+                    originalOptions.Add(__result[i]);
 
-                var optionsCopy = __result.ToArray();
-                foreach (WorldCoordinates option in optionsCopy)
+                HashSet<WorldCoordinates> danger = GetDangerousTilesCached(gameState, player);
+
+                // Strict filter: drop threatened tiles
+                for (int i = __result.Count - 1; i >= 0; i--)
                 {
-                    TileData target = gameState.Map.GetTile(option);
+                    if (danger.Contains(__result[i]))
+                        __result.RemoveAt(i);
+                }
 
-                    if (unit.UnitData.HasAbility(UnitAbility.Type.Stiff)
-                        && unit.type != UnitData.Type.Juggernaut
-                        && !unit.HasAbility(UnitAbility.Type.Infiltrate))
+                bool onlyStartLeft =
+                    __result.Count == 0
+                    || (__result.Count == 1
+                        && __result[0].X == start.X
+                        && __result[0].Y == start.Y);
+
+                // If immobilized, allow escape moves that do not get closer to the nearest enemy
+                if (onlyStartLeft && originalOptions.Count > 0)
+                {
+                    WorldCoordinates? nearestEnemy = FindNearestEnemyCoordinate(gameState, player, start);
+                    if (nearestEnemy.HasValue)
                     {
-                        if (dangerousTiles.Contains(option))
-                            __result.Remove(option);
+                        int startDistance = MapDataExtensions.ChebyshevDistance(start, nearestEnemy.Value);
 
-                        if (!target.terrain.IsWater() && unit.type == UnitData.Type.Bombership)
-                            __result.Remove(option);
+                        var ranked = new List<(WorldCoordinates coord, int dist)>();
+                        for (int i = 0; i < originalOptions.Count; i++)
+                        {
+                            WorldCoordinates option = originalOptions[i];
+                            int dist = MapDataExtensions.ChebyshevDistance(option, nearestEnemy.Value);
+
+                            // Keep only moves that maintain or increase distance
+                            if (dist >= startDistance)
+                                ranked.Add((option, dist));
+                        }
+
+                        ranked.Sort((a, b) => b.dist.CompareTo(a.dist));
+
+                        __result.Clear();
+                        int keep = Math.Min(3, ranked.Count);
+                        for (int i = 0; i < keep; i++)
+                            __result.Add(ranked[i].coord);
                     }
                 }
+
+                if (__result.Count == 0)
+                    __result.Add(start);
             }
             catch (Exception ex)
             {
-                Loader.modLogger?.LogError($"[Conquest-AI] Error in GetMoveOptions: {ex}");
+                Loader.modLogger?.LogError($"[Conquest-AI] GetMoveOptions_PreventSuicide: {ex}");
             }
         }
 
+        private static WorldCoordinates? FindNearestEnemyCoordinate(
+            GameState gameState,
+            PlayerState player,
+            WorldCoordinates from)
+        {
+            WorldCoordinates? best = null;
+            int bestDistance = int.MaxValue;
+
+            // Local scan only — avoids full-map cost
+            TileData[] nearby = MapDataExtensions.GetAreaSorted(gameState.Map, from, 8, true, true);
+            if (nearby == null)
+                return null;
+
+            for (int i = 0; i < nearby.Length; i++)
+            {
+                TileData tile = nearby[i];
+                if (tile?.unit == null) continue;
+                if (tile.unit.owner == player.Id || tile.unit.owner == 0) continue;
+
+                int dist = MapDataExtensions.ChebyshevDistance(from, tile.coordinates);
+                if (dist < bestDistance)
+                {
+                    bestDistance = dist;
+                    best = tile.coordinates;
+                }
+            }
+
+            return best;
+        }
+
         // =========================================================================
-        // Helpers
+        // Helpers — citadel cache
         // =========================================================================
         private static void EnsureCitadelCache(GameState gameState, PlayerState player)
         {
@@ -514,15 +545,32 @@ namespace PolyMode
             {
                 if (city == null) continue;
                 CityAnalysisResult? result = ForceScanCornerForCitadel(
-                    gameState.Map, gameState, city, 5, false, player, Faction.Both, false);
-
+                    gameState.Map, gameState, city, 5, player, Faction.Both, false);
                 if (result?.TargetTile != null)
                     cityCitadelCornerCache[city.coordinates] = result.TargetTile;
             }
             citadelCacheTurn = (int)gameState.CurrentTurn;
         }
 
-        private static HashSet<WorldCoordinates> GetDangerousTilesCached(GameState gameState, PlayerState player, WorldCoordinates center, int radius)
+        public static CityAnalysisResult? ForceScanCornerForCitadel(
+            MapData map,
+            GameState gameState,
+            TileData cityTile,
+            int searchRadius,
+            PlayerState currentOwner,
+            Faction findType = Faction.Both,
+            bool findMost = false)
+        {
+            return MapAnalysis.ScanCityForCorners(
+                map, gameState, cityTile, searchRadius, currentOwner,
+                findType, findMost, requireEmptyTile: false);
+        }
+
+        // =========================================================================
+        // Helpers — danger (threat zone, not attack-target list)
+        // =========================================================================
+        private static HashSet<WorldCoordinates> GetDangerousTilesCached(
+            GameState gameState, PlayerState player)
         {
             if (dangerousCacheTurn != gameState.CurrentTurn)
             {
@@ -530,106 +578,102 @@ namespace PolyMode
                 dangerousCacheTurn = (int)gameState.CurrentTurn;
             }
 
-            if (dangerousTilesCache.TryGetValue(player.Id, out var cached))
+            if (dangerousTilesCache.TryGetValue(player.Id, out HashSet<WorldCoordinates>? cached))
                 return cached;
 
-            var set = GetDangerousTilesInArea(gameState, player, center, radius);
+            HashSet<WorldCoordinates> set = BuildDangerSetFromOptions(gameState, player);
             dangerousTilesCache[player.Id] = set;
             return set;
         }
 
-        private static bool IsWaterUnderMyControl(GameState gameState, TileData startTile, PlayerState player)
+        private static HashSet<WorldCoordinates> BuildDangerSetFromOptions(
+            GameState gameState, PlayerState player)
         {
-            if (!startTile.IsWater) return false;
+            var danger = new HashSet<WorldCoordinates>();
+            if (gameState?.Map?.Tiles == null || player == null)
+                return danger;
 
-            var queue = new Queue<WorldCoordinates>();
-            var visited = new HashSet<WorldCoordinates>();
-            queue.Enqueue(startTile.coordinates);
-            visited.Add(startTile.coordinates);
+            const int maxEnemies = 40;
+            int enemyCount = 0;
 
-            int iterations = 0;
-            const int maxIterations = 1500; // reduced from 3000
-
-            while (queue.Count > 0 && iterations < maxIterations)
+            try
             {
-                iterations++;
-                WorldCoordinates currentCoord = queue.Dequeue();
-                TileData currentTile = gameState.Map.GetTile(currentCoord);
-                if (currentTile == null) continue;
+                skipMoveOptionsPatch = true;
 
-                TileData[] neighbors = MapDataExtensions.GetAreaSorted(gameState.Map, currentCoord, 1, true, false);
-                for (int i = 0; i < neighbors.Length; i++)
+                foreach (TileData tile in gameState.Map.Tiles)
                 {
-                    TileData neighbor = neighbors[i];
-                    if (neighbor == null) continue;
+                    if (tile?.unit == null) continue;
 
-                    if (neighbor.improvement != null
-                        && neighbor.improvement.type == ImprovementData.Type.City
-                        && neighbor.owner != player.Id
-                        && neighbor.owner != 0)
-                        return false;
+                    UnitState enemy = tile.unit;
+                    if (enemy.owner == player.Id || enemy.owner == 0)
+                        continue;
 
-                    if (neighbor.IsWater && !visited.Contains(neighbor.coordinates))
+                    if (++enemyCount > maxEnemies)
+                        break;
+
+                    int moveRange = Math.Max(0, UnitDataExtensions.GetMovement(enemy, gameState));
+                    int attackRange = Math.Max(0, UnitDataExtensions.GetRange(enemy.UnitData));
+                    bool hasDash = enemy.HasAbility(UnitAbility.Type.Dash);
+
+                    // Attack origins: current tile always
+                    var origins = new List<WorldCoordinates> { enemy.coordinates };
+
+                    if (moveRange > 0)
                     {
-                        visited.Add(neighbor.coordinates);
-                        queue.Enqueue(neighbor.coordinates);
+                        try
+                        {
+                            var moveOptions = enemy.GetMovementOptions(gameState, moveRange);
+                            if (moveOptions != null)
+                            {
+                                for (int i = 0; i < moveOptions.Count; i++)
+                                {
+                                    WorldCoordinates destination = moveOptions[i];
+                                    danger.Add(destination); // tile they can walk onto
+
+                                    if (hasDash)
+                                        origins.Add(destination);
+                                }
+                            }
+                        }
+                        catch
+                        {
+                            // ignore it if bugged
+                        }
                     }
+
+                    // Threat zone around each origin (empty tiles included)
+                    int markRange = attackRange > 0 ? attackRange : 1;
+                    for (int o = 0; o < origins.Count; o++)
+                        MarkRange(gameState, origins[o], markRange, danger);
                 }
             }
-            return true;
+            finally
+            {
+                skipMoveOptionsPatch = false;
+            }
+
+            return danger;
         }
 
-        private static HashSet<WorldCoordinates> GetDangerousTilesInArea(GameState gameState, PlayerState player, WorldCoordinates center, int radius)
+        private static void MarkRange(
+            GameState gameState,
+            WorldCoordinates origin,
+            int range,
+            HashSet<WorldCoordinates> danger)
         {
-            var dangerousTiles = new HashSet<WorldCoordinates>();
-            TileData[] nearbyTiles = MapDataExtensions.GetAreaSorted(gameState.Map, center, radius, true, true);
+            TileData[] area = MapDataExtensions.GetAreaSorted(
+                gameState.Map, origin, range, true, true);
+            if (area == null) return;
 
-            for (int i = 0; i < nearbyTiles.Length; i++)
+            for (int i = 0; i < area.Length; i++)
             {
-                TileData enemyTile = nearbyTiles[i];
-                if (enemyTile.unit == null || enemyTile.unit.owner == player.Id) continue;
-
-                UnitState enemy = enemyTile.unit;
-                int movementRange = UnitDataExtensions.GetMovement(enemy, gameState);
-                int attackRange = UnitDataExtensions.GetRange(enemy.UnitData);
-                int totalThreatRadius = enemy.HasAbility(UnitAbility.Type.Dash)
-                    ? movementRange + attackRange
-                    : Math.Max(movementRange, attackRange);
-
-                TileData[] threatArea = MapDataExtensions.GetAreaSorted(gameState.Map, enemyTile.coordinates, totalThreatRadius, true, true);
-                for (int j = 0; j < threatArea.Length; j++)
-                    dangerousTiles.Add(threatArea[j].coordinates);
+                if (area[i] != null)
+                    danger.Add(area[i].coordinates);
             }
-            return dangerousTiles;
-        }
-
-        private static bool IsTileDangerous(GameState gameState, PlayerState player, WorldCoordinates targetCoord, int scanRadius)
-        {
-            TileData[] nearbyTiles = MapDataExtensions.GetAreaSorted(gameState.Map, targetCoord, scanRadius, true, true);
-
-            for (int i = 0; i < nearbyTiles.Length; i++)
-            {
-                TileData enemyTile = nearbyTiles[i];
-                if (enemyTile.unit == null || enemyTile.unit.owner == player.Id) continue;
-
-                UnitState enemy = enemyTile.unit;
-                int movementRange = UnitDataExtensions.GetMovement(enemy, gameState);
-                int attackRange = UnitDataExtensions.GetRange(enemy.UnitData);
-                int totalThreatRadius = enemy.HasAbility(UnitAbility.Type.Dash)
-                    ? movementRange + attackRange
-                    : Math.Max(movementRange, attackRange);
-
-                int distance = Math.Max(
-                    Math.Abs(enemyTile.coordinates.x - targetCoord.x),
-                    Math.Abs(enemyTile.coordinates.y - targetCoord.y));
-
-                if (distance <= totalThreatRadius) return true;
-            }
-            return false;
         }
 
         // =========================================================================
-        // Forced Get Methods (cleaned)
+        // Helpers — build / score
         // =========================================================================
         private static Il2CppSystem.Collections.Generic.List<CommandBase> ForceGetBuildableImprovements(
             GameState gameState, PlayerState player, TileData tile, bool includeUnavailable = false)
@@ -637,51 +681,53 @@ namespace PolyMode
             var list = new Il2CppSystem.Collections.Generic.List<CommandBase>();
             if (player.Id != gameState.CurrentPlayer) return list;
 
-            // Re-use existing GameLogicData – do NOT create a new one
             foreach (ImprovementData improvementData in gameState.GameLogicData.GetUnlockedImprovements(player))
             {
                 if (improvementData.HasAbility(ImprovementAbility.Type.Manual)) continue;
                 if (player.currency < improvementData.cost) continue;
 
                 if (gameState.GameLogicData.MeetsRequirement(tile, improvementData, player, gameState)
-                    && gameState.GameLogicData.MeetsAdjacencyRequirement(gameState.Map, tile, improvementData.adjacencyRequirements))
+                    && gameState.GameLogicData.MeetsAdjacencyRequirement(
+                        gameState.Map, tile, improvementData.adjacencyRequirements))
                 {
-                    CommandBase cmd = new BuildCommand(player.Id, improvementData.type, tile.coordinates);
-                    if (includeUnavailable || cmd.IsValid(gameState))
-                        list.Add(cmd);
+                    var command = new BuildCommand(player.Id, improvementData.type, tile.coordinates);
+                    if (includeUnavailable || command.IsValid(gameState))
+                        list.Add(command);
                 }
             }
+
             return list;
         }
 
-        private static float ForceGetImprovementScore(GameState gameState, ImprovementData improvementData, TileData tileData, PlayerState player)
+        private static float ForceGetImprovementScore(
+            GameState gameState, ImprovementData improvementData, TileData tileData, PlayerState player)
         {
-            float num = 0f;
+            float score = 0f;
             int population = improvementData.rewards.GetPopulation();
-            num += population * 25f;
-            num += improvementData.rewards.GetCurrency() * 2f;
-            num += improvementData.work * 20f;
+            score += population * 25f;
+            score += improvementData.rewards.GetCurrency() * 2f;
+            score += improvementData.work * 20f;
 
             if (improvementData.HasAbility(ImprovementAbility.Type.Patina))
             {
                 population = improvementData.growthRewards.GetPopulation();
-                num += population * 100f;
+                score += population * 100f;
             }
 
-            UnitData unit = improvementData.creates.GetUnit();
-            if (unit != null)
+            UnitData createdUnit = improvementData.creates.GetUnit();
+            if (createdUnit != null)
             {
                 AI.UnitStats desired = AI.GetDesiredUnitStats(gameState, player, tileData);
-                num += AI.GetBuildUnitScore(gameState, player, unit, desired, tileData);
+                score += AI.GetBuildUnitScore(gameState, player, createdUnit, desired, tileData);
             }
 
             if (improvementData.adjacencyImprovements != null && improvementData.adjacencyImprovements.Count > 0)
             {
-                int adj = ActionUtils.GetAdjacencyBonusAt(gameState, tileData, improvementData);
+                int adjacency = ActionUtils.GetAdjacencyBonusAt(gameState, tileData, improvementData);
                 if (improvementData.adjacencyImprovements.Contains(ImprovementData.Type.PolarisClimate))
-                    adj += player.aiState.frozenTileCount / 20;
-                num += improvementData.growthRewards.GetPopulation() * 20 * adj;
-                num += improvementData.work * 20 * adj;
+                    adjacency += player.aiState.frozenTileCount / 20;
+                score += improvementData.growthRewards.GetPopulation() * 20 * adjacency;
+                score += improvementData.work * 20 * adjacency;
             }
 
             if (tileData.rulingCityCoordinates != WorldCoordinates.NULL_COORDINATES)
@@ -692,164 +738,45 @@ namespace PolyMode
                     && (int)city.improvement.xp + population > (int)city.improvement.level
                         - improvementData.CalculateImprovementPopulationAtLevel((int)tileData.improvement.level))
                 {
-                    num += 100f;
+                    score += 100f;
                 }
 
                 if (improvementData.IsRouteOpener() && city != null)
                 {
                     bool hasRoute = false;
-                    foreach (TileData t in gameState.Map.GetArea(city.coordinates, 1, true, false))
+                    foreach (TileData nearbyTile in gameState.Map.GetArea(city.coordinates, 1, true, false))
                     {
-                        if (t.improvement != null
-                            && gameState.GameLogicData.TryGetData(t.improvement.type, out ImprovementData d)
-                            && d.IsRouteOpener())
+                        if (nearbyTile.improvement != null
+                            && gameState.GameLogicData.TryGetData(nearbyTile.improvement.type, out ImprovementData data)
+                            && data.IsRouteOpener())
                         {
                             hasRoute = true;
                             break;
                         }
                     }
+
                     if (!city.IsConnected && !hasRoute)
                     {
-                        num += 30f;
-                        if (city.coordinates == player.startTile) num += 50f;
+                        score += 30f;
+                        if (city.coordinates == player.startTile)
+                            score += 50f;
                     }
                 }
             }
 
             if (gameState.Settings.RulesGameMode == (GameMode)1)
-                num += improvementData.rewards.GetScore() / 10f;
+                score += improvementData.rewards.GetScore() / 10f;
 
-            num += AI.GetImprovementAbilityScore(gameState, player, improvementData, tileData);
+            score += AI.GetImprovementAbilityScore(gameState, player, improvementData, tileData);
 
             if (improvementData.type != ImprovementData.Type.Road
                 && tileData.resource != null
                 && !gameState.GameLogicData.IsResourceRequiredByImprovement(tileData.resource.type, improvementData))
             {
-                num *= 0.5f;
+                score *= 0.5f;
             }
 
-            return num;
-        }
-
-        public static CityAnalysisResult? ForceScanCornerForCitadel(
-            MapData map,
-            GameState gameState,
-            TileData cityTile,
-            int searchRadius,
-            bool searchFromCenter,
-            PlayerState currentOwner,
-            Faction findType = Faction.Both,
-            bool findMost = true)
-        {
-            if (gameState == null || cityTile == null || map == null || currentOwner == null) return null;
-
-            var territoryTiles = ActionUtils.GetCityAreaSorted(gameState, cityTile);
-            if (territoryTiles == null || territoryTiles.Count == 0) return null;
-
-            var startingPoints = new Dictionary<string, TileData>();
-
-            if (searchFromCenter)
-            {
-                startingPoints["CityCenter"] = cityTile;
-            }
-            else
-            {
-                TileData? topLeft = null, topRight = null, bottomLeft = null, bottomRight = null;
-                float maxTR = float.MinValue, minBL = float.MaxValue;
-                float maxBR = float.MinValue, minTL = float.MaxValue;
-
-                foreach (var tile in territoryTiles)
-                {
-                    if (tile == null) continue;
-                    int x = tile.coordinates.X;
-                    int y = tile.coordinates.Y;
-
-                    float sum = x + y;
-                    if (sum > maxTR) { maxTR = sum; topRight = tile; }
-                    if (sum < minBL) { minBL = sum; bottomLeft = tile; }
-
-                    float diff = x - y;
-                    if (diff > maxBR) { maxBR = diff; bottomRight = tile; }
-                    if (diff < minTL) { minTL = diff; topLeft = tile; }
-                }
-
-                if (topLeft != null && MapDataExtensions.DistanceToEdge(map, topLeft.coordinates) != 0)
-                    startingPoints["TopLeft"] = topLeft;
-                if (topRight != null && MapDataExtensions.DistanceToEdge(map, topRight.coordinates) != 0)
-                    startingPoints["TopRight"] = topRight;
-                if (bottomLeft != null && MapDataExtensions.DistanceToEdge(map, bottomLeft.coordinates) != 0)
-                    startingPoints["BottomLeft"] = bottomLeft;
-                if (bottomRight != null && MapDataExtensions.DistanceToEdge(map, bottomRight.coordinates) != 0)
-                    startingPoints["BottomRight"] = bottomRight;
-            }
-
-            CityAnalysisResult? bestResult = null;
-
-            foreach (var kvp in startingPoints)
-            {
-                TileData startTile = kvp.Value;
-                if (startTile == null) continue;
-
-                WorldCoordinates centerCoord = new WorldCoordinates(startTile.coordinates.X, startTile.coordinates.Y);
-                TileData[] areaTiles = map.GetAreaSorted(centerCoord, searchRadius, true, true);
-
-                int enemyCityCount = 0;
-                int ownedCityCount = 0;
-
-                if (areaTiles != null)
-                {
-                    foreach (var areaTile in areaTiles)
-                    {
-                        if (areaTile?.improvement == null) continue;
-                        if (areaTile.improvement.type != ImprovementData.Type.City) continue;
-                        if (areaTile.coordinates.X == cityTile.coordinates.X
-                            && areaTile.coordinates.Y == cityTile.coordinates.Y) continue;
-
-                        if (areaTile.owner != currentOwner.Id) enemyCityCount++;
-                        else ownedCityCount++;
-                    }
-                }
-
-                var currentResult = new CityAnalysisResult
-                {
-                    TargetTile = startTile,
-                    EnemyCityCount = enemyCityCount,
-                    OwnedCityCount = ownedCityCount,
-                    TileTypeLabel = kvp.Key
-                };
-
-                if (bestResult == null)
-                {
-                    bestResult = currentResult;
-                    continue;
-                }
-
-                int currentCount = findType switch
-                {
-                    Faction.Enemy => currentResult.EnemyCityCount,
-                    Faction.Owned => currentResult.OwnedCityCount,
-                    Faction.Both => currentResult.EnemyCityCount + currentResult.OwnedCityCount,
-                    _ => 0
-                };
-
-                int bestCount = findType switch
-                {
-                    Faction.Enemy => bestResult.EnemyCityCount,
-                    Faction.Owned => bestResult.OwnedCityCount,
-                    Faction.Both => bestResult.EnemyCityCount + bestResult.OwnedCityCount,
-                    _ => 0
-                };
-
-                if (findMost)
-                {
-                    if (currentCount > bestCount) bestResult = currentResult;
-                }
-                else
-                {
-                    if (currentCount < bestCount) bestResult = currentResult;
-                }
-            }
-            return bestResult;
+            return score;
         }
     }
 }

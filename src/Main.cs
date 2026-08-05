@@ -462,55 +462,8 @@ namespace PolyMode
 
                 if (improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel") && tile.owner == playerState.Id)
                 {
-                    int cityLimit = 0;
-                    int capitalLimit = 0;
-                    int citadel = CountCityCitadel(gameState, tile);
-                    TileData cityTile = GameManager.GameState.Map.GetTile(tile.rulingCityCoordinates);
-                    
-                    if (gameState.Settings.MapSize  <= 11)
-                    {
-                        cityLimit = 1;
-                        capitalLimit = 1;
-                    }
-                    else
-                    if (gameState.Settings.MapSize  <= 16)
-                    {
-                        cityLimit = 2;
-                        capitalLimit = 2;
-                    }
-                    else
-                    if (gameState.Settings.MapSize  <= 20)
-                    {
-                        cityLimit = 3;
-                        capitalLimit = 3;
-                    }
-                    else
-                    {
-                        cityLimit = 4;
-                        capitalLimit = 4;
-                    }
-
-                    if (tile.terrain == TerrainData.Type.Mountain && !playerState.HasAbility(EnumCache<PlayerAbility.Type>.GetType("mountaincitadel"), gameState))
-                    {
-                        __result = false;
-                        return;
-                    }
-                    if ((tile.terrain == TerrainData.Type.Water || tile.terrain == TerrainData.Type.Ocean) && !playerState.HasAbility(EnumCache<PlayerAbility.Type>.GetType("watercitadel"), gameState))
-                    {
-                        __result = false;
-                        return;
-                    }
-
-                    if (cityTile.capitalOf != 0 && citadel >= capitalLimit)
-                    {
-                        __result = false;
-                        return;
-                    }
-                    if (cityTile.capitalOf == 0 && citadel >= cityLimit)
-                    {
-                        __result = false;
-                        return;
-                    }
+                    int citadelCount = CountCityCitadel(gameState, tile);
+                    __result = !CityHasMaxCitadel(gameState, tile, playerState, citadelCount);
                 }
             }
             catch (Exception ex)
@@ -925,6 +878,55 @@ namespace PolyMode
                 }
             }      
             return count;
+        }
+
+        public static bool CityHasMaxCitadel(GameState gameState, TileData tile, PlayerState playerState, int citadelCount)
+        {
+            TileData cityTile = GameManager.GameState.Map.GetTile(tile.rulingCityCoordinates);
+            int cityLimit = 0;
+            int capitalLimit = 0;
+            
+            if (gameState.Settings.MapSize  <= 11)
+            {
+                cityLimit = 1;
+                capitalLimit = 1;
+            }
+            else
+            if (gameState.Settings.MapSize  <= 16)
+            {
+                cityLimit = 2;
+                capitalLimit = 2;
+            }
+            else
+            if (gameState.Settings.MapSize  <= 20)
+            {
+                cityLimit = 3;
+                capitalLimit = 3;
+            }
+            else
+            {
+                cityLimit = 5;
+                capitalLimit = 5;
+            }
+
+            if (tile.terrain == TerrainData.Type.Mountain && !playerState.HasAbility(EnumCache<PlayerAbility.Type>.GetType("mountaincitadel"), gameState))
+            {
+                return true;
+            }
+            if ((tile.terrain == TerrainData.Type.Water || tile.terrain == TerrainData.Type.Ocean) && !playerState.HasAbility(EnumCache<PlayerAbility.Type>.GetType("watercitadel"), gameState))
+            {
+                return true;
+            }
+
+            if (cityTile.capitalOf != 0 && citadelCount >= capitalLimit)
+            {
+                return true;
+            }
+            if (cityTile.capitalOf == 0 && citadelCount >= cityLimit)
+            {
+                return true;
+            }
+            return false;
         }
 
         // =========================================================================

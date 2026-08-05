@@ -186,53 +186,81 @@ namespace PolyMode
         {
             try
             {
-                if (GameManager.GameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
-                    && GameManager.GameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
-                {
+                // ===== Safe GameState / mode check =====
+                if (GameManager.GameState == null || GameManager.GameState.Settings == null)
                     return;
-                }
 
-                if (data == null || data.type != EnumCache<ImprovementData.Type>.GetType("citadel")) return;
-                if (data.type == ImprovementData.Type.City) return;
-                if (__instance.transform.Find("CitadelOverlay") != null) return;
+                var mode = GameManager.GameState.Settings.RulesGameMode;
+                if (mode != EnumCache<GameMode>.GetType("conquest")
+                    && mode != EnumCache<GameMode>.GetType("reign"))
+                    return;
 
-                // 1. 精準撈出官方原版的 CityStatusDisplay 預製物
+                if (__instance == null || data == null)
+                    return;
+
+                if (data.type != EnumCache<ImprovementData.Type>.GetType("citadel"))
+                    return;
+
+                if (data.type == ImprovementData.Type.City)
+                    return;
+
+                if (__instance.transform == null)
+                    return;
+
+                if (__instance.transform.Find("CitadelOverlay") != null)
+                    return;
+
+                // 1. Get vanilla CityStatusDisplay
                 var vanillaDisplay = ObjectPool.GetPooledObject<CityStatusDisplay>("CityStatusDisplay");
-                if (vanillaDisplay == null) return;
+                if (vanillaDisplay == null)
+                    return;
 
                 Sprite? officialBgSprite = null;
                 TMP_FontAsset? officialFont = null;
                 Material? officialFontMaterial = null;
 
-                // 2. 從官方的 label 中，精準抽取最核心的字型資源
-                if (vanillaDisplay.nameContainer != null)
+                // 2. Extract font / bg safely
+                try
                 {
-                    if (vanillaDisplay.nameContainer.bg != null)
+                    if (vanillaDisplay.nameContainer != null)
                     {
-                        officialBgSprite = vanillaDisplay.nameContainer.bg.sprite;
-                    }
-                    if (vanillaDisplay.nameContainer.label != null)
-                    {
-                        officialFont = vanillaDisplay.nameContainer.label.font;
-                        // 拿取 fontSharedMaterial 才能保證字型渲染集（Atlas）完全同步
-                        officialFontMaterial = vanillaDisplay.nameContainer.label.fontSharedMaterial; 
+                        if (vanillaDisplay.nameContainer.bg != null)
+                            officialBgSprite = vanillaDisplay.nameContainer.bg.sprite;
+
+                        if (vanillaDisplay.nameContainer.label != null)
+                        {
+                            officialFont = vanillaDisplay.nameContainer.label.font;
+                            officialFontMaterial = vanillaDisplay.nameContainer.label.fontSharedMaterial;
+                        }
                     }
                 }
+                catch (Exception ex)
+                {
+                    Loader.modLogger?.LogWarning($"[Conquest] Failed to extract CityStatusDisplay assets: {ex.Message}");
+                }
 
-                // 3. 還給物件池
-                vanillaDisplay.ReturnToPool();
+                // 3. Return to pool
+                try
+                {
+                    vanillaDisplay.ReturnToPool();
+                }
+                catch { /* ignore pool errors */ }
 
-                // 4. 生成你的 Citadel 覆蓋層
+                // 4. Create overlay
                 var overlayObj = new GameObject("CitadelOverlay");
                 var overlayType = Il2CppType.Of<CitadelOverlay>();
                 var added = overlayObj.AddComponent(overlayType);
-                if (added == null) return;
+                if (added == null)
+                {
+                    UnityEngine.Object.Destroy(overlayObj);
+                    return;
+                }
 
                 var overlay = added.Cast<CitadelOverlay>();
                 overlayObj.transform.SetParent(__instance.transform, false);
                 overlayObj.transform.rotation = Quaternion.identity;
-                overlayObj.transform.localScale = Vector3.one; 
-                overlayObj.transform.localPosition = new Vector3(0f, -0.1f, 0f);     
+                overlayObj.transform.localScale = Vector3.one;
+                overlayObj.transform.localPosition = new Vector3(0f, -0.1f, 0f);
 
                 if (officialBgSprite != null && overlay.background != null)
                 {
@@ -240,16 +268,17 @@ namespace PolyMode
                     overlay.background.drawMode = SpriteDrawMode.Sliced;
                 }
 
-                // 5. 【關鍵修正】：強制把官方最正宗的字型直接傳給你的 UI 元件
+                // 5. Apply official font
                 if (overlay.label != null)
                 {
-                    if (officialFont != null) overlay.label.font = officialFont;
-                    if (officialFontMaterial != null) overlay.label.fontSharedMaterial = officialFontMaterial;
-                    
-                    // 💡 官方預設細節補強：
-                    overlay.label.fontSize = 1.25f;                  // 官方字體大小（可依據畫面比例微調 10~14）
-                    overlay.label.alignment = TextAlignmentOptions.Center; // 強制文字置中對齊
-                    overlay.label.fontStyle = FontStyles.Normal;   // Citadel 非首都，維持常規字體
+                    if (officialFont != null)
+                        overlay.label.font = officialFont;
+                    if (officialFontMaterial != null)
+                        overlay.label.fontSharedMaterial = officialFontMaterial;
+
+                    overlay.label.fontSize = 1.25f;
+                    overlay.label.alignment = TextAlignmentOptions.Center;
+                    overlay.label.fontStyle = FontStyles.Normal;
                 }
 
                 overlay.SetCitadel(__instance, data);

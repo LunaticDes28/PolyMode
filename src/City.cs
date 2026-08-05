@@ -425,7 +425,7 @@ namespace PolyMode
                     {
                         __result.xp += 2;
                         
-                        Loader.modLogger?.LogInfo($"[Conquest-City] XP successfully updated to: {__result.xp}");
+                        //Loader.modLogger?.LogInfo($"[Conquest-City] XP successfully updated to: {__result.xp}");
                     }
                 }
             }
@@ -536,7 +536,7 @@ namespace PolyMode
                 PlayerState playerState;
                 GameManager.GameState.TryGetPlayer(__instance.action.PlayerId, out playerState);
 
-                Loader.modLogger?.LogInfo("[Conquest-City] CityRewardReaction Postfix processing visuals.");
+                //Loader.modLogger?.LogInfo("[Conquest-City] CityRewardReaction Postfix processing visuals.");
 
                 TileData tile = GameManager.GameState.Map.GetTile(__instance.action.Coordinates);
                 if (tile == null) return;
