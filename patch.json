@@ -38,7 +38,7 @@
     },
     "improvementData":{
 		"citadel": {
-			"cost": 30,
+			"cost": 20,
 			"terrainRequirements": [
 				{
 					"terrain": "field"

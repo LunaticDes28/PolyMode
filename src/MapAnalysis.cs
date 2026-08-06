@@ -252,14 +252,14 @@ namespace PolyMode
                         }
                         catch
                         {
-                            // ignore it if bugged
+                            // ignore one enemy
                         }
                     }
 
                     // Threat zone around each origin (empty tiles included)
-                    int markRange = attackRange > 0 ? attackRange : 1;
+                    int paintRange = attackRange > 0 ? attackRange : 1;
                     for (int o = 0; o < origins.Count; o++)
-                        MarkRange(gameState, origins[o], markRange, danger);
+                        PaintRange(gameState, origins[o], paintRange, danger);
                 }
             }
             finally
@@ -270,7 +270,7 @@ namespace PolyMode
             return danger;
         }
 
-        public static void MarkRange(
+        public static void PaintRange(
             GameState gameState,
             WorldCoordinates origin,
             int range,

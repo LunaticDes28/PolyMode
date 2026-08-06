@@ -183,7 +183,7 @@ namespace PolyMode
                 else if (centerResult != null && centerResult.OwnedCityCount >= 5)
                     __result = EnumCache<CityReward>.GetType("taxreform");
                 else
-                    __result = random.Next(0, 2) == 0
+                    __result = random.Next(0, 1) == 0
                         ? CityReward.BorderGrowth
                         : CityReward.PopulationGrowth;
             }
@@ -272,7 +272,7 @@ namespace PolyMode
                     return;
 
                 if (__result == null) return;
-                if (player.Currency < 30) return;
+                if (player.Currency < 30 || player.currency < (ResourceDataUtils.CalculateIncomeFor(gameState, player.Id) * 1.25 + 5) || gameState.CurrentTurn < 25) return;
                 if (gameState.CurrentTurn % 2 != 0) return;
 
                 var empireTiles = player.aiState?.PlayerMapData?.empireTiles;
@@ -401,6 +401,9 @@ namespace PolyMode
                 if (bestNewType != null && bestNewType.HasAbility(ImprovementAbility.Type.Consumed))
                     return;
 
+                if (bestNewType != null && bestNewType.type == ImprovementData.Type.Market && commandTile.improvement.level > 2)
+                    return;
+
                 if (commandTile.unit != null && commandTile.unit.owner != commandTile.owner)
                     return;
 
@@ -438,7 +441,7 @@ namespace PolyMode
                     && mode != EnumCache<GameMode>.GetType("reign"))
                     return;
 
-                if (!gameState.TryGetPlayer(unit.owner, out PlayerState player) || !player.AutoPlay)
+                if (!gameState.TryGetPlayer(unit.owner, out PlayerState player))
                     return;
 
                 if (!unit.UnitData.HasAbility(UnitAbility.Type.Stiff)
@@ -446,52 +449,12 @@ namespace PolyMode
                     || unit.HasAbility(UnitAbility.Type.Infiltrate))
                     return;
 
-                // Snapshot before filtering
-                var originalOptions = new List<WorldCoordinates>();
-                for (int i = 0; i < __result.Count; i++)
-                    originalOptions.Add(__result[i]);
-
                 HashSet<WorldCoordinates> danger = GetDangerousTilesCached(gameState, player);
 
-                // Strict filter: drop threatened tiles
                 for (int i = __result.Count - 1; i >= 0; i--)
                 {
                     if (danger.Contains(__result[i]))
                         __result.RemoveAt(i);
-                }
-
-                bool onlyStartLeft =
-                    __result.Count == 0
-                    || (__result.Count == 1
-                        && __result[0].X == start.X
-                        && __result[0].Y == start.Y);
-
-                // If immobilized, allow escape moves that do not get closer to the nearest enemy
-                if (onlyStartLeft && originalOptions.Count > 0)
-                {
-                    WorldCoordinates? nearestEnemy = FindNearestEnemyCoordinate(gameState, player, start);
-                    if (nearestEnemy.HasValue)
-                    {
-                        int startDistance = MapDataExtensions.ChebyshevDistance(start, nearestEnemy.Value);
-
-                        var ranked = new List<(WorldCoordinates coord, int dist)>();
-                        for (int i = 0; i < originalOptions.Count; i++)
-                        {
-                            WorldCoordinates option = originalOptions[i];
-                            int dist = MapDataExtensions.ChebyshevDistance(option, nearestEnemy.Value);
-
-                            // Keep only moves that maintain or increase distance
-                            if (dist >= startDistance)
-                                ranked.Add((option, dist));
-                        }
-
-                        ranked.Sort((a, b) => b.dist.CompareTo(a.dist));
-
-                        __result.Clear();
-                        int keep = Math.Min(3, ranked.Count);
-                        for (int i = 0; i < keep; i++)
-                            __result.Add(ranked[i].coord);
-                    }
                 }
 
                 if (__result.Count == 0)
@@ -501,36 +464,6 @@ namespace PolyMode
             {
                 Loader.modLogger?.LogError($"[Conquest-AI] GetMoveOptions_PreventSuicide: {ex}");
             }
-        }
-
-        private static WorldCoordinates? FindNearestEnemyCoordinate(
-            GameState gameState,
-            PlayerState player,
-            WorldCoordinates from)
-        {
-            WorldCoordinates? best = null;
-            int bestDistance = int.MaxValue;
-
-            // Local scan only — avoids full-map cost
-            TileData[] nearby = MapDataExtensions.GetAreaSorted(gameState.Map, from, 8, true, true);
-            if (nearby == null)
-                return null;
-
-            for (int i = 0; i < nearby.Length; i++)
-            {
-                TileData tile = nearby[i];
-                if (tile?.unit == null) continue;
-                if (tile.unit.owner == player.Id || tile.unit.owner == 0) continue;
-
-                int dist = MapDataExtensions.ChebyshevDistance(from, tile.coordinates);
-                if (dist < bestDistance)
-                {
-                    bestDistance = dist;
-                    best = tile.coordinates;
-                }
-            }
-
-            return best;
         }
 
         // =========================================================================
@@ -552,28 +485,26 @@ namespace PolyMode
             citadelCacheTurn = (int)gameState.CurrentTurn;
         }
 
-        public static HashSet<WorldCoordinates> GetDangerousTilesCached(
+         private static HashSet<WorldCoordinates> GetDangerousTilesCached(
             GameState gameState, PlayerState player)
         {
-            if (AI_2.dangerousCacheTurn != gameState.CurrentTurn)
+            if (dangerousCacheTurn != gameState.CurrentTurn)
             {
-                AI_2.dangerousTilesCache.Clear();
-                AI_2.dangerousCacheTurn = (int)gameState.CurrentTurn;
+                dangerousTilesCache.Clear();
+                dangerousCacheTurn = (int)gameState.CurrentTurn;
             }
 
-            if (AI_2.dangerousTilesCache.TryGetValue(player.Id, out HashSet<WorldCoordinates>? cached))
+            if (dangerousTilesCache.TryGetValue(player.Id, out HashSet<WorldCoordinates>? cached))
                 return cached;
 
             HashSet<WorldCoordinates> set = MapAnalysis.BuildDangerSetFromOptions(gameState, player);
-            AI_2.dangerousTilesCache[player.Id] = set;
+            dangerousTilesCache[player.Id] = set;
             return set;
         }
 
-
         // =========================================================================
-        // Helpers — force fetching data
+        // Helpers — get
         // =========================================================================
-
         public static CityAnalysisResult? ForceScanCornerForCitadel(
             MapData map,
             GameState gameState,
