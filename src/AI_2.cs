@@ -12,18 +12,18 @@ namespace PolyMode
         // =========================================================================
         // Caches
         // =========================================================================
-        private static int lastProcessedTurn = -1;
-        private static byte lastProcessedPlayer = 255;
-        private static readonly HashSet<WorldCoordinates> processedTilesThisTurn = new HashSet<WorldCoordinates>();
+        public static int lastProcessedTurn = -1;
+        public static byte lastProcessedPlayer = 255;
+        public static readonly HashSet<WorldCoordinates> processedTilesThisTurn = new HashSet<WorldCoordinates>();
 
-        private static readonly Dictionary<WorldCoordinates, TileData> cityCitadelCornerCache =
+        public static readonly Dictionary<WorldCoordinates, TileData> cityCitadelCornerCache =
             new Dictionary<WorldCoordinates, TileData>();
-        private static int citadelCacheTurn = -1;
+        public static int citadelCacheTurn = -1;
 
-        private static readonly Dictionary<byte, HashSet<WorldCoordinates>> dangerousTilesCache =
+        public static readonly Dictionary<byte, HashSet<WorldCoordinates>> dangerousTilesCache =
             new Dictionary<byte, HashSet<WorldCoordinates>>();
-        private static int dangerousCacheTurn = -1;
-        private static bool skipMoveOptionsPatch = false;
+        public static int dangerousCacheTurn = -1;
+        public static bool skipMoveOptionsPatch = false;
 
         // =========================================================================
         // A. Diplomacy
@@ -214,7 +214,7 @@ namespace PolyMode
                 TileData rulingCity = gameState.Map.GetTile(tileData.rulingCityCoordinates);
                 if (rulingCity == null || rulingCity.improvement == null) return;
 
-                EnsureCitadelCache(gameState, player);
+                GetCitadelCache(gameState, player);
 
                 if (cityCitadelCornerCache.TryGetValue(rulingCity.coordinates, out TileData? targetedCorner)
                     && targetedCorner != null
@@ -285,7 +285,7 @@ namespace PolyMode
                     processedTilesThisTurn.Clear();
                 }
 
-                EnsureCitadelCache(gameState, player);
+                GetCitadelCache(gameState, player);
 
                 float bestScoreDifference = 0f;
                 DestroyCommand? bestDestroyCommand = null;
@@ -534,9 +534,9 @@ namespace PolyMode
         }
 
         // =========================================================================
-        // Helpers — citadel cache
+        // Helpers — cache
         // =========================================================================
-        private static void EnsureCitadelCache(GameState gameState, PlayerState player)
+        private static void GetCitadelCache(GameState gameState, PlayerState player)
         {
             if (citadelCacheTurn == gameState.CurrentTurn) return;
 
@@ -552,6 +552,28 @@ namespace PolyMode
             citadelCacheTurn = (int)gameState.CurrentTurn;
         }
 
+        public static HashSet<WorldCoordinates> GetDangerousTilesCached(
+            GameState gameState, PlayerState player)
+        {
+            if (AI_2.dangerousCacheTurn != gameState.CurrentTurn)
+            {
+                AI_2.dangerousTilesCache.Clear();
+                AI_2.dangerousCacheTurn = (int)gameState.CurrentTurn;
+            }
+
+            if (AI_2.dangerousTilesCache.TryGetValue(player.Id, out HashSet<WorldCoordinates>? cached))
+                return cached;
+
+            HashSet<WorldCoordinates> set = MapAnalysis.BuildDangerSetFromOptions(gameState, player);
+            AI_2.dangerousTilesCache[player.Id] = set;
+            return set;
+        }
+
+
+        // =========================================================================
+        // Helpers — force fetching data
+        // =========================================================================
+
         public static CityAnalysisResult? ForceScanCornerForCitadel(
             MapData map,
             GameState gameState,
@@ -566,115 +588,6 @@ namespace PolyMode
                 findType, findMost, requireEmptyTile: false);
         }
 
-        // =========================================================================
-        // Helpers — danger (threat zone, not attack-target list)
-        // =========================================================================
-        private static HashSet<WorldCoordinates> GetDangerousTilesCached(
-            GameState gameState, PlayerState player)
-        {
-            if (dangerousCacheTurn != gameState.CurrentTurn)
-            {
-                dangerousTilesCache.Clear();
-                dangerousCacheTurn = (int)gameState.CurrentTurn;
-            }
-
-            if (dangerousTilesCache.TryGetValue(player.Id, out HashSet<WorldCoordinates>? cached))
-                return cached;
-
-            HashSet<WorldCoordinates> set = BuildDangerSetFromOptions(gameState, player);
-            dangerousTilesCache[player.Id] = set;
-            return set;
-        }
-
-        private static HashSet<WorldCoordinates> BuildDangerSetFromOptions(
-            GameState gameState, PlayerState player)
-        {
-            var danger = new HashSet<WorldCoordinates>();
-            if (gameState?.Map?.Tiles == null || player == null)
-                return danger;
-
-            const int maxEnemies = 40;
-            int enemyCount = 0;
-
-            try
-            {
-                skipMoveOptionsPatch = true;
-
-                foreach (TileData tile in gameState.Map.Tiles)
-                {
-                    if (tile?.unit == null) continue;
-
-                    UnitState enemy = tile.unit;
-                    if (enemy.owner == player.Id || enemy.owner == 0)
-                        continue;
-
-                    if (++enemyCount > maxEnemies)
-                        break;
-
-                    int moveRange = Math.Max(0, UnitDataExtensions.GetMovement(enemy, gameState));
-                    int attackRange = Math.Max(0, UnitDataExtensions.GetRange(enemy.UnitData));
-                    bool hasDash = enemy.HasAbility(UnitAbility.Type.Dash);
-
-                    // Attack origins: current tile always
-                    var origins = new List<WorldCoordinates> { enemy.coordinates };
-
-                    if (moveRange > 0)
-                    {
-                        try
-                        {
-                            var moveOptions = enemy.GetMovementOptions(gameState, moveRange);
-                            if (moveOptions != null)
-                            {
-                                for (int i = 0; i < moveOptions.Count; i++)
-                                {
-                                    WorldCoordinates destination = moveOptions[i];
-                                    danger.Add(destination); // tile they can walk onto
-
-                                    if (hasDash)
-                                        origins.Add(destination);
-                                }
-                            }
-                        }
-                        catch
-                        {
-                            // ignore it if bugged
-                        }
-                    }
-
-                    // Threat zone around each origin (empty tiles included)
-                    int markRange = attackRange > 0 ? attackRange : 1;
-                    for (int o = 0; o < origins.Count; o++)
-                        MarkRange(gameState, origins[o], markRange, danger);
-                }
-            }
-            finally
-            {
-                skipMoveOptionsPatch = false;
-            }
-
-            return danger;
-        }
-
-        private static void MarkRange(
-            GameState gameState,
-            WorldCoordinates origin,
-            int range,
-            HashSet<WorldCoordinates> danger)
-        {
-            TileData[] area = MapDataExtensions.GetAreaSorted(
-                gameState.Map, origin, range, true, true);
-            if (area == null) return;
-
-            for (int i = 0; i < area.Length; i++)
-            {
-                if (area[i] != null)
-                    danger.Add(area[i].coordinates);
-            }
-        }
-
-        // =========================================================================
-        // Helpers — build / score
-        // =========================================================================
         private static Il2CppSystem.Collections.Generic.List<CommandBase> ForceGetBuildableImprovements(
             GameState gameState, PlayerState player, TileData tile, bool includeUnavailable = false)
         {

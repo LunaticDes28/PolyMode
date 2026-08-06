@@ -22,7 +22,7 @@ namespace PolyMode
     public static class MapAnalysis
     {
         /// <summary>
-        /// Scan from city center only.
+        /// Scan from center of city territoy only.
         /// </summary>
         public static CityAnalysisResult? ScanCityFromCenter(
             MapData map,
@@ -199,6 +199,92 @@ namespace PolyMode
                 $"radius={radius} {findType}/{selectionMode} → {result.TileTypeLabel} " +
                 $"({result.TargetTile?.coordinates.X},{result.TargetTile?.coordinates.Y}) " +
                 $"enemy={result.EnemyCityCount} owned={result.OwnedCityCount}");
+        }
+
+        public static HashSet<WorldCoordinates> BuildDangerSetFromOptions(
+            GameState gameState, PlayerState player)
+        {
+            var danger = new HashSet<WorldCoordinates>();
+            if (gameState?.Map?.Tiles == null || player == null)
+                return danger;
+
+            const int maxEnemies = 40;
+            int enemyCount = 0;
+
+            try
+            {
+                AI_2.skipMoveOptionsPatch = true;
+
+                foreach (TileData tile in gameState.Map.Tiles)
+                {
+                    if (tile?.unit == null) continue;
+
+                    UnitState enemy = tile.unit;
+                    if (enemy.owner == player.Id || enemy.owner == 0)
+                        continue;
+
+                    if (++enemyCount > maxEnemies)
+                        break;
+
+                    int moveRange = Math.Max(0, UnitDataExtensions.GetMovement(enemy, gameState));
+                    int attackRange = Math.Max(0, UnitDataExtensions.GetRange(enemy.UnitData));
+                    bool hasDash = enemy.HasAbility(UnitAbility.Type.Dash);
+
+                    // Attack origins: current tile always
+                    var origins = new List<WorldCoordinates> { enemy.coordinates };
+
+                    if (moveRange > 0)
+                    {
+                        try
+                        {
+                            var moveOptions = enemy.GetMovementOptions(gameState, moveRange);
+                            if (moveOptions != null)
+                            {
+                                for (int i = 0; i < moveOptions.Count; i++)
+                                {
+                                    WorldCoordinates destination = moveOptions[i];
+                                    danger.Add(destination); // tile they can walk onto
+
+                                    if (hasDash)
+                                        origins.Add(destination);
+                                }
+                            }
+                        }
+                        catch
+                        {
+                            // ignore it if bugged
+                        }
+                    }
+
+                    // Threat zone around each origin (empty tiles included)
+                    int markRange = attackRange > 0 ? attackRange : 1;
+                    for (int o = 0; o < origins.Count; o++)
+                        MarkRange(gameState, origins[o], markRange, danger);
+                }
+            }
+            finally
+            {
+                AI_2.skipMoveOptionsPatch = false;
+            }
+
+            return danger;
+        }
+
+        public static void MarkRange(
+            GameState gameState,
+            WorldCoordinates origin,
+            int range,
+            HashSet<WorldCoordinates> danger)
+        {
+            TileData[] area = MapDataExtensions.GetAreaSorted(
+                gameState.Map, origin, range, true, true);
+            if (area == null) return;
+
+            for (int i = 0; i < area.Length; i++)
+            {
+                if (area[i] != null)
+                    danger.Add(area[i].coordinates);
+            }
         }
     }
 }
