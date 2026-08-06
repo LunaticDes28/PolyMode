@@ -208,7 +208,7 @@ namespace PolyMode
             if (gameState?.Map?.Tiles == null || player == null)
                 return danger;
 
-            const int maxEnemies = 40;
+            const int maxEnemies = 1000;
             int enemyCount = 0;
 
             try
@@ -218,6 +218,8 @@ namespace PolyMode
                 foreach (TileData tile in gameState.Map.Tiles)
                 {
                     if (tile?.unit == null) continue;
+
+                    if(!tile.GetExplored(player.Id)) continue;
 
                     UnitState enemy = tile.unit;
                     if (enemy.owner == player.Id || enemy.owner == 0)

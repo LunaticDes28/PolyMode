@@ -441,7 +441,7 @@ namespace PolyMode
                     && mode != EnumCache<GameMode>.GetType("reign"))
                     return;
 
-                if (!gameState.TryGetPlayer(unit.owner, out PlayerState player))
+                if (!gameState.TryGetPlayer(unit.owner, out PlayerState player) || !player.AutoPlay)
                     return;
 
                 if (!unit.UnitData.HasAbility(UnitAbility.Type.Stiff)
