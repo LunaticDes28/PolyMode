@@ -618,6 +618,17 @@ namespace PolyMode
             {
                 TileData village = neutralVillages[i];
                 if (kept.Contains(village.coordinates)) continue;
+
+                bool isWaterCity = true;
+                foreach (TileData neighbour in gameState.Map.GetTileNeighborsSorted(village.coordinates))
+                {
+                    if (!neighbour.terrain.IsWater())
+                    {
+                        isWaterCity = false;
+                        break;
+                    }
+                }
+
                 village.improvement = new ImprovementState
                 {
                     type = ImprovementData.Type.Ruin,
@@ -627,6 +638,12 @@ namespace PolyMode
                     founded = 0
                 };
                 ruinsCount++;
+
+
+                if (isWaterCity)
+                {
+                    village.terrain = TerrainData.Type.Mountain;
+                }
             }
 
             Loader.modLogger?.LogInfo(
@@ -1599,6 +1616,18 @@ namespace PolyMode
             }
         }
 
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(BattleHelpers), nameof(BattleHelpers.GetBattleResults))]
+        private static void GetBattleResults_DenyMoveIntoCity(GameState gameState, UnitState attackingUnit, UnitState defendingUnit, ref BattleResults __result)
+        {
+            TileData cityTile = gameState.Map.GetTile(defendingUnit.coordinates);
+
+            if (attackingUnit.type == EnumCache<UnitData.Type>.GetType("citadelrammership") && cityTile.improvement.type == ImprovementData.Type.City)
+            {
+                __result.shouldMoveToDefeatedEnemyTile = false;
+            }
+        }
+
         // =========================================================================
         // G. Tech Cost & City Destruction Handler
         // =========================================================================
@@ -1795,19 +1824,9 @@ namespace PolyMode
                 }
             }
 
-            // 5. Generate ruins (or mountain?!?!)
+            // 5. Generate ruins
             if (isCityUpgrade != true)
             {
-                bool isWaterCity = true;
-                foreach (TileData neighbour in gameState.Map.GetTileNeighborsSorted(cityTile.coordinates))
-                {
-                    if (!neighbour.terrain.IsWater())
-                    {
-                        isWaterCity = false;
-                        break;
-                    }
-                }
-
                 cityTile.improvement = new ImprovementState
                 {
                     type = ImprovementData.Type.Ruin,
@@ -1816,11 +1835,6 @@ namespace PolyMode
                     production = 1,
                     founded = 0
                 };
-
-                if (isWaterCity)
-                {
-                    cityTile.terrain = TerrainData.Type.Mountain;
-                }
             }
             else
             {
