@@ -64,112 +64,458 @@ namespace PolyMode
         {
             try
             {
-                Loader.modLogger?.LogInfo($"[CapitalGenerator] Started");
-
                 if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
                     && GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
                 {
                     return true;
                 }
 
-                Loader.modLogger?.LogInfo($"[CapitalGenerator] Clustered City Mod started. Players={playerCount}, Width={width}");
-
-                int num = (playerCount <= 4) ? 2 : 4;
-
-                int num2 = width / num;
-                if (num2 < 3)
+                if (playerCount > 8)
                 {
-                    Loader.modLogger?.LogError($"Domain size {num2} is too small for {playerCount} players");
+                    Loader.modLogger?.LogWarning($"[CapitalGenerator] players={playerCount} > 8 → vanilla");
                     return true;
                 }
 
-                int val = width - num2 * num;
-                int num3 = num * num;
+                int mapType = (int)GameManager.PreliminaryGameSettings.mapPreset;
+                Loader.modLogger?.LogInfo($"[CapitalGenerator] mapType={mapType} players={playerCount}");
 
-                List<int> list = new List<int>();
-                for (int i = 0; i < num3; i++)
+                // Continents (3): uses vanilla continent capitals
+                if (mapType == 3)
                 {
-                    int domainX = i % num;
-                    int domainY = i / num;
+                    Loader.modLogger?.LogInfo("[CapitalGenerator] Executing vanilla logics...");
+                    return true;
+                }
 
-                    if (num == 2)
+                // 1-4 players: uses 2x2 (1-4 players) domains; all domains used
+                // 4-8 players: uses 4x4 (4-8 players) domains; non-corner outer-ring domains only
+                Loader.modLogger?.LogInfo(
+                    $"[CapitalGenerator] Quadrants players={playerCount} width={width}");
+
+                int grid = (playerCount <= 4) ? 2 : 4;
+                int domainSize = width / grid;
+                if (domainSize < 3)
+                {
+                    Loader.modLogger?.LogError($"[CapitalGenerator] domainSize={domainSize} too small → vanilla");
+                    return true;
+                }
+
+                int remainder = width - domainSize * grid;
+
+                List<int> availableDomains = new List<int>();
+                if (grid == 2)
+                {
+                    for (int i = 0; i < 4; i++)
+                        availableDomains.Add(i);
+                }
+                else
+                {
+                    for (int i = 0; i < 16; i++)
                     {
-                        // simple case all quadrants usable
-                        list.Add(i);
-                    }
-                    else if (num == 4)
-                    {
-                        // must isEdge but never isCorner
-                        bool isEdge = (domainX == 0 || domainX == 3 || domainY == 0 || domainY == 3);
+                        int domainX = i % grid;
+                        int domainY = i / grid;
+                        bool isEdge = domainX == 0 || domainX == 3 || domainY == 0 || domainY == 3;
                         bool isCorner = (domainX == 0 || domainX == 3) && (domainY == 0 || domainY == 3);
-
-                        // selected quadrants: 2, 3, 5, 8, 9, 12, 14, 15
                         if (isEdge && !isCorner)
-                        {
-                            list.Add(i);
-                        }
+                            availableDomains.Add(i);
                     }
                 }
 
                 Il2CppStructArray<int> probabilities = new Il2CppStructArray<int>(width * width);
-
-                for (int j = 1; j < num; j++)
+                for (int j = 1; j < grid; j++)
                 {
-                    for (int k = 1; k < num; k++)
+                    for (int k = 1; k < grid; k++)
                     {
-                        int num4 = Math.Min(val, Math.Max(1, Math.Min(val, k) - 1));
-                        int num5 = Math.Min(val, Math.Max(1, Math.Min(val, j) - 1));
-                        int num6 = k * num2 + num4;
-                        int num7 = j * num2 + num5;
-
-                        __instance.AddDistanceToProbabilityTable(probabilities, width, new WorldCoordinates(num6 - 1, num7 - 1), num2);
+                        int offsetX = Math.Min(remainder, Math.Max(1, Math.Min(remainder, k) - 1));
+                        int offsetY = Math.Min(remainder, Math.Max(1, Math.Min(remainder, j) - 1));
+                        int px = k * domainSize + offsetX;
+                        int py = j * domainSize + offsetY;
+                        __instance.AddDistanceToProbabilityTable(
+                            probabilities, width, new WorldCoordinates(px - 1, py - 1), domainSize);
                     }
                 }
 
-                List<int> list2 = new List<int>(playerCount);
+                List<int> chosenDomains = new List<int>();
+                List<int> capitalTileIndices = new List<int>();
 
-                for (int l = 0; l < playerCount; l++)
+                for (int p = 0; p < playerCount; p++)
                 {
-                    if (list.Count == 0) break;
+                    if (availableDomains.Count == 0)
+                        break;
 
-                    int index = __instance.random.Range(0, list.Count);
-                    int index2 = list[index];
-                    list.RemoveAt(index);
+                    int bestDomain = PickBestDomain(__instance.random, availableDomains, chosenDomains, grid);
+                    availableDomains.Remove(bestDomain);
+                    chosenDomains.Add(bestDomain);
 
-                    WorldCoordinates worldCoordinates = WorldCoordinates.FromIndex(index2, num);
-                    int num8 = Math.Min(val, Math.Max(1, Math.Min(val, worldCoordinates.X) - 1));
-                    int num9 = Math.Min(val, Math.Max(1, Math.Min(val, worldCoordinates.Y) - 1));
-                    int num10 = worldCoordinates.X * num2 + num8;
-                    int num11 = worldCoordinates.Y * num2 + num9;
+                    WorldCoordinates domainCoord = WorldCoordinates.FromIndex(bestDomain, grid);
+                    int offsetX = Math.Min(remainder, Math.Max(1, Math.Min(remainder, domainCoord.X) - 1));
+                    int offsetY = Math.Min(remainder, Math.Max(1, Math.Min(remainder, domainCoord.Y) - 1));
+                    int originX = domainCoord.X * domainSize + offsetX;
+                    int originY = domainCoord.Y * domainSize + offsetY;
 
-                    int num12 = (num2 == 3) ? 1 : 2;
-                    int num13 = 1;
-                    int startX = Math.Max(num12, num10 + num13);
-                    int endX = Math.Min(width - num12, num10 + num2 - num13);
-                    int startY = Math.Max(num12, num11 + num13);
-                    int endY = Math.Min(width - num12, num11 + num2 - num13);
-                    int max = __instance.CalculateProbabilityInRange(probabilities, width, startX, endX, startY, endY);
-                    int value = __instance.random.Range(0, max);
-                    int num14 = __instance.IndexForProbabilityValueInRange(probabilities, width, value, startX, endX, startY, endY);
+                    int margin = (domainSize == 3) ? 1 : 2;
+                    int inset = 1;
+                    int startX = Math.Max(margin, originX + inset);
+                    int endX = Math.Min(width - margin, originX + domainSize - inset);
+                    int startY = Math.Max(margin, originY + inset);
+                    int endY = Math.Min(width - margin, originY + domainSize - inset);
 
-                    Loader.modLogger?.LogInfo($"[CapitalGenerator] Capital placed at {WorldCoordinates.FromIndex(num14, width)} for player {l}");
+                    if (startX > endX || startY > endY)
+                    {
+                        startX = Math.Max(0, originX);
+                        endX = Math.Min(width - 1, originX + domainSize - 1);
+                        startY = Math.Max(0, originY);
+                        endY = Math.Min(width - 1, originY + domainSize - 1);
+                    }
 
-                    list2.Add(num14);
+                    int maxProb = __instance.CalculateProbabilityInRange(
+                        probabilities, width, startX, endX, startY, endY);
+
+                    int tileIndex;
+                    if (maxProb <= 0)
+                    {
+                        int cx = Math.Clamp(originX + domainSize / 2, 0, width - 1);
+                        int cy = Math.Clamp(originY + domainSize / 2, 0, width - 1);
+                        tileIndex = new WorldCoordinates(cx, cy).ToIndex(width);
+                    }
+                    else
+                    {
+                        int roll = __instance.random.Range(0, maxProb);
+                        tileIndex = __instance.IndexForProbabilityValueInRange(
+                            probabilities, width, roll, startX, endX, startY, endY);
+                    }
+
+                    capitalTileIndices.Add(tileIndex);
+                    Loader.modLogger?.LogInfo(
+                        $"[CapitalGenerator] P{p+1} domain={bestDomain} tile={WorldCoordinates.FromIndex(tileIndex, width)}");
                 }
 
                 __result = new Il2CppSystem.Collections.Generic.List<int>();
-                foreach (int index in list2)
-                {
-                    __result.Add(index);
-                }
+                foreach (int idx in capitalTileIndices)
+                    __result.Add(idx);
 
                 return false;
             }
             catch (Exception ex)
             {
-                Loader.modLogger?.LogError($"[CapitalGenerator] Critical error: {ex}");
-                return true; 
+                Loader.modLogger?.LogError($"[CapitalGenerator] {ex}");
+                return true;
             }
+        }
+
+        [HarmonyPrefix]
+        [HarmonyPatch(typeof(MapGenerator), nameof(MapGenerator.TryAddCapitalToContinent))]
+        private static bool TryAddCapitalToContinent_CoastPangea(
+            MapGenerator __instance,
+            GameState gameState, 
+            PlayerState player, 
+            WorldContinent targetContinent, 
+            MapData map, 
+            Il2CppSystem.Collections.Generic.List<TileData> capitals,
+            ref bool __result)
+        {
+            try
+            {
+                if (GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                    && GameManager.PreliminaryGameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                {
+                    return true;
+                }
+
+                // 1. 檢查地圖類型是否為 Pangea (MapType == 6)
+                int mapType = -1;
+                try
+                {
+                    mapType = (int)GameManager.PreliminaryGameSettings.mapPreset;
+                }
+                catch { }
+
+                if (mapType != 6) return true;
+
+                if (map == null || player == null || targetContinent == null || capitals == null) return true;
+
+                // 2. 模擬原版邏輯：先拿到一個原版偏好的基準點座標
+                WorldCoordinates preferredCoords = __instance.GetBestCityCoordinates(gameState, map, targetContinent.Tiles, capitals);
+                
+                // 應急處理：萬一原版找不到，從該大陸隨機挑一個，否則交給原版處理
+                if (preferredCoords == WorldCoordinates.NULL_COORDINATES)
+                {
+                    if (targetContinent.Tiles != null && targetContinent.Tiles.Count > 0)
+                        preferredCoords = targetContinent.Tiles[0]; // 拿大陸的第一個格子做基準
+                    else
+                        return true; // 讓原版去噴 Warning 或走應急流程
+                }
+
+                TileData preferredTile = map.GetTile(preferredCoords);
+
+                // 3. 尋找最適合的沿海格子（傳入 IL2CPP 的 capitals 清單）
+                TileData? bestCoast = FindPangeaCoastTile(map, preferredTile, capitals);
+
+                if (bestCoast != null)
+                {
+                    Loader.modLogger?.LogInfo(
+                        $"[CapitalGenerator] Pangea P{player.Id}: " +
+                        $"{preferredTile.coordinates} → coast {bestCoast.coordinates}");
+                    preferredTile = bestCoast;
+                }
+                else
+                {
+                    Loader.modLogger?.LogWarning(
+                        $"[CapitalGenerator] Pangea P{player.Id}: no coast tile, keep {preferredTile.coordinates}");
+                }
+
+                // 4. 執行與原版完全相同的安放與註冊邏輯
+                preferredTile.owner = player.Id;
+                capitals.Add(preferredTile); // 直接寫入 IL2CPP 的 List，洗牌邏輯會完美同步！
+                __result = true; 
+
+                // 5. 返回 false 成功攔截，不再執行原版方法
+                return false; 
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[CapitalGenerator] TryAddCapitalToContinent Error: {ex}");
+                return true; // 發生任何例外時走原版安全機制，防止遊戲卡死
+            }
+        }
+
+        // 修改後的沿海搜尋演算法：完美支援 IL2CPP List
+        private static TileData? FindPangeaCoastTile(
+            MapData map, 
+            TileData preferred, 
+            Il2CppSystem.Collections.Generic.List<TileData> currentCapitals)
+        {
+            List<TileData> coast = new List<TileData>();
+
+            // 搜集全地圖合法的陸地沿海格子
+            for (int i = 0; i < map.Tiles.Length; i++)
+            {
+                TileData tile = map.Tiles[i];
+                if (tile == null || tile.IsWater) continue;
+                if (tile.improvement != null) continue;
+
+                bool nearWater = false;
+                var neighbors = map.GetTileNeighbors(tile.coordinates);
+                if (neighbors == null) continue;
+
+                // 判斷四周是否有水
+                for (int n = 0; n < neighbors.Count; n++)
+                {
+                    var neighbor = neighbors[n];
+                    if (neighbor != null && neighbor.IsWater)
+                    {
+                        nearWater = true;
+                        break;
+                    }
+                }
+                if (!nearWater) continue;
+
+                coast.Add(tile);
+            }
+
+            if (coast.Count == 0) return null;
+
+            TileData? best = null;
+            int bestScore = int.MinValue;
+
+            for (int i = 0; i < coast.Count; i++)
+            {
+                TileData t = coast[i];
+                int minDist = int.MaxValue;
+
+                // 如果目前地圖上還沒有放置任何首都（洗牌或初次安放的第一個玩家）
+                if (currentCapitals.Count == 0)
+                {
+                    minDist = MapDataExtensions.ChebyshevDistance(t.coordinates, preferred.coordinates);
+                    int score2 = 1000 - minDist; // 越接近原版偏好點分數越高
+                    if (score2 > bestScore)
+                    {
+                        bestScore = score2;
+                        best = t;
+                    }
+                    continue;
+                }
+
+                // 遍歷 IL2CPP List 計算與其它已有首都的 Chebyshev 距離
+                for (int a = 0; a < currentCapitals.Count; a++)
+                {
+                    int d = MapDataExtensions.ChebyshevDistance(t.coordinates, currentCapitals[a].coordinates);
+                    if (d < minDist) minDist = d;
+                }
+
+                // 核心評分公式：極力拉開與其他首都的距離（minDist * 10），並帶有靠近原版偏好點的微小權重（-bias）
+                int bias = MapDataExtensions.ChebyshevDistance(t.coordinates, preferred.coordinates);
+                int score = (minDist * 10) - bias;
+
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    best = t;
+                }
+            }
+
+            return best;
+        }
+
+        /*private static bool GeneratePangeaCapitals(
+            MapGenerator gen,
+            int width,
+            int playerCount,
+            ref Il2CppSystem.Collections.Generic.List<int> __result)
+        {
+            try
+            {
+                if (playerCount > 8)
+                {
+                    Loader.modLogger?.LogWarning("[CapitalGenerator] Pangea players>8 → vanilla");
+                    return true;
+                }
+
+                int grid = (playerCount <= 4) ? 2 : 5;
+                int domainSize = width / grid;
+                if (domainSize < 3)
+                {
+                    Loader.modLogger?.LogError("[CapitalGenerator] Pangea domain too small → vanilla");
+                    return true;
+                }
+
+                int remainder = width - domainSize * grid;
+
+                List<int> availableDomains = new List<int>();
+                if (grid == 2)
+                {
+                    for (int i = 0; i < 4; i++)
+                        availableDomains.Add(i);
+                }
+                else
+                {
+                    availableDomains.AddRange(new[] { 6, 7, 8, 11, 13, 16, 17, 18 });
+                }
+
+                Il2CppStructArray<int> probabilities = new Il2CppStructArray<int>(width * width);
+                for (int j = 1; j < grid; j++)
+                {
+                    for (int k = 1; k < grid; k++)
+                    {
+                        int offsetX = Math.Min(remainder, Math.Max(1, Math.Min(remainder, k) - 1));
+                        int offsetY = Math.Min(remainder, Math.Max(1, Math.Min(remainder, j) - 1));
+                        int px = k * domainSize + offsetX;
+                        int py = j * domainSize + offsetY;
+                        gen.AddDistanceToProbabilityTable(
+                            probabilities, width, new WorldCoordinates(px - 1, py - 1), domainSize);
+                    }
+                }
+
+                List<int> chosenDomains = new List<int>();
+                List<int> capitalTiles = new List<int>();
+
+                for (int p = 0; p < playerCount; p++)
+                {
+                    if (availableDomains.Count == 0)
+                        break;
+
+                    int domain = PickBestDomain(gen.random, availableDomains, chosenDomains, grid);
+                    availableDomains.Remove(domain);
+                    chosenDomains.Add(domain);
+
+                    WorldCoordinates domainCoord = WorldCoordinates.FromIndex(domain, grid);
+                    int offsetX = Math.Min(remainder, Math.Max(1, Math.Min(remainder, domainCoord.X) - 1));
+                    int offsetY = Math.Min(remainder, Math.Max(1, Math.Min(remainder, domainCoord.Y) - 1));
+                    int originX = domainCoord.X * domainSize + offsetX;
+                    int originY = domainCoord.Y * domainSize + offsetY;
+
+                    int margin = domainSize == 3 ? 1 : 2;
+                    int inset = 1;
+                    int startX = Math.Max(margin, originX + inset);
+                    int endX = Math.Min(width - margin, originX + domainSize - inset);
+                    int startY = Math.Max(margin, originY + inset);
+                    int endY = Math.Min(width - margin, originY + domainSize - inset);
+
+                    if (startX > endX || startY > endY)
+                    {
+                        startX = Math.Max(0, originX);
+                        endX = Math.Min(width - 1, originX + domainSize - 1);
+                        startY = Math.Max(0, originY);
+                        endY = Math.Min(width - 1, originY + domainSize - 1);
+                    }
+
+                    int maxProb = gen.CalculateProbabilityInRange(
+                        probabilities, width, startX, endX, startY, endY);
+
+                    int tileIndex;
+                    if (maxProb <= 0)
+                    {
+                        int cx = Math.Clamp(originX + domainSize / 2, 0, width - 1);
+                        int cy = Math.Clamp(originY + domainSize / 2, 0, width - 1);
+                        tileIndex = new WorldCoordinates(cx, cy).ToIndex(width);
+                    }
+                    else
+                    {
+                        int roll = gen.random.Range(0, maxProb);
+                        tileIndex = gen.IndexForProbabilityValueInRange(
+                            probabilities, width, roll, startX, endX, startY, endY);
+                    }
+
+                    capitalTiles.Add(tileIndex);
+                    Loader.modLogger?.LogInfo(
+                        $"[CapitalGenerator] mapType = 3 (Pangea) P{p+1} grid={grid} domain={domain} " +
+                        $"tile={WorldCoordinates.FromIndex(tileIndex, width)}");
+                }
+
+                __result = new Il2CppSystem.Collections.Generic.List<int>();
+                foreach (int idx in capitalTiles)
+                    __result.Add(idx);
+
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[CapitalGenerator] Pangea: {ex}");
+                return true;
+            }
+        }*/
+
+        private static int PickBestDomain(
+            Il2CppSystem.Random random,
+            List<int> availableDomains,
+            List<int> chosenDomainIndices,
+            int grid)
+        {
+            if (chosenDomainIndices.Count == 0)
+                return availableDomains[random.Range(0, availableDomains.Count)];
+
+            int bestMinDist = -1;
+            List<int> tied = new List<int>();
+
+            for (int i = 0; i < availableDomains.Count; i++)
+            {
+                int candidate = availableDomains[i];
+                int cx = candidate % grid;
+                int cy = candidate / grid;
+
+                int minDist = int.MaxValue;
+                for (int j = 0; j < chosenDomainIndices.Count; j++)
+                {
+                    int other = chosenDomainIndices[j];
+                    int ox = other % grid;
+                    int oy = other / grid;
+                    int dist = Math.Max(Math.Abs(cx - ox), Math.Abs(cy - oy));
+                    if (dist < minDist)
+                        minDist = dist;
+                }
+
+                if (minDist > bestMinDist)
+                {
+                    bestMinDist = minDist;
+                    tied.Clear();
+                    tied.Add(candidate);
+                }
+                else if (minDist == bestMinDist)
+                {
+                    tied.Add(candidate);
+                }
+            }
+
+            return tied[random.Range(0, tied.Count)];
         }
 
         // =========================================================================
@@ -177,118 +523,203 @@ namespace PolyMode
         // =========================================================================
         [HarmonyPostfix]
         [HarmonyPatch(typeof(MapGenerator), nameof(MapGenerator.GenerateInternal))]
-        private static void GenerateInternal_DistributeVillages(MapGenerator __instance, GameState gameState, MapGeneratorSettings settings)
+        private static void GenerateInternal_DistributeVillages(
+            MapGenerator __instance,
+            GameState gameState,
+            MapGeneratorSettings settings)
         {
             try
             {
-
                 if (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
                     && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
                 {
                     return;
                 }
 
-                Loader.modLogger?.LogInfo($"[Conquest-Map] ConquestVillageGeneration...");
                 ConquestVillageGeneration(__instance, gameState, settings);
-
             }
             catch (Exception ex)
             {
-                Loader.modLogger?.LogError($"[Conquest-Map] MapGenerator error: {ex.Message}");
+                Loader.modLogger?.LogError($"[Conquest-Map] Village gen: {ex}");
             }
-        }        
-        
-        private static void ConquestVillageGeneration(MapGenerator gen, GameState gameState, MapGeneratorSettings settings)
+        }
+
+        private static void ConquestVillageGeneration(
+            MapGenerator gen,
+            GameState gameState,
+            MapGeneratorSettings settings)
         {
-            try
+            List<TileData> neutralVillages = new List<TileData>();
+            for (int i = 0; i < gameState.Map.Tiles.Length; i++)
             {
-                List<TileData> neutralVillages = new List<TileData>();
-                for (int i = 0; i < gameState.Map.Tiles.Length; i++)
-                {
-                    TileData tile = gameState.Map.Tiles[i];
-                    if (tile.HasImprovement(ImprovementData.Type.City) && tile.owner == 0)
-                    {
-                        neutralVillages.Add(tile);
-                    }
-                }
-
-                int playerCount = gameState.PlayerCount;
-                if (playerCount <= 0) return;
-                Loader.modLogger!.LogInfo($"[Conquest-Map] {neutralVillages.Count} villages after vanilla generation for {playerCount} players.");
-
-                int remainder = neutralVillages.Count % playerCount;
-                int citiesToSpawn = playerCount - remainder;
-                Loader.modLogger!.LogInfo($"[Conquest-Map] {citiesToSpawn} more villages needed to even out distribution for all players.");
-
-                // Tries to add villages if it is close to distribute 1 more villages to each player
-                if (remainder > 0 && remainder >= (playerCount * 0.5f))
-                {
-                    Loader.modLogger!.LogInfo($"[Conquest-Map] Trying to add villages!");
-   
-                    for (int s = 0; s < citiesToSpawn; s++)
-                    {
-                        Loader.modLogger!.LogInfo($"[Conquest-Map] Attempting to spawn new village...");
-
-                        WorldCoordinates emergencyCoords = gen.GetEmergencyCityPosition(gameState, gameState.Map);
-                        if (emergencyCoords != WorldCoordinates.NULL_COORDINATES)
-                        {
-                            int tileIndex = gameState.Map.GetTileIndex(emergencyCoords);
-                            TileData targetTile = gameState.Map.Tiles[tileIndex];
-                            gen.SetTileAsCity(targetTile);
-                            neutralVillages.Add(targetTile);
-                            Loader.modLogger!.LogInfo($"[Conquest-Map] {s+1}st emergency village placed at {emergencyCoords}.");
-                            gen.MakeOcean(gameState.Map, gameState, settings.shallowPercentOfWater == 0f);
-                            Loader.modLogger!.LogInfo($"[Conquest-Map] Placing water tiles again after emergency cities spawned...");
-                        }
-                        else
-                        {
-                            Loader.modLogger!.LogInfo($"[Conquest-Map] Failure to spawn new village!");
-                            break;
-                        }
-                    }
-                    
-                    Loader.modLogger!.LogInfo($"[Conquest-Map] {neutralVillages.Count} villages after custom generation for {playerCount} players.");
-                }
-
-                // Decide which village to scrap based on proximity (if necessary)
-                int maxCitiesPerPlayer = neutralVillages.Count / playerCount;
-                HashSet<WorldCoordinates> assignedCoordinates = new HashSet<WorldCoordinates>();
-
-                for (int round = 0; round < maxCitiesPerPlayer; round++)
-                {
-                    for (int p = 0; p < playerCount; p++)
-                    {
-                        PlayerState player = gameState.PlayerStates[p];
-                        AssignClosestVillage(gameState, neutralVillages, assignedCoordinates, player);
-                    }
-                }
-
-                // Convert excess to ruins
-                int ruinsCount = 0;
-                for (int i = neutralVillages.Count - 1; i >= 0; i--)
-                {
-                    var village = neutralVillages[i];
-                    if (!assignedCoordinates.Contains(village.coordinates))
-                    {
-                        village.improvement = new ImprovementState
-                        {
-                            type = ImprovementData.Type.Ruin,
-                            borderSize = 0,
-                            level = 1,
-                            production = 1,
-                            founded = 0
-                        };
-                        neutralVillages.RemoveAt(i);
-                        ruinsCount++;
-                    }
-                }
-
-                Loader.modLogger!.LogInfo($"[Conquest-Map] ConquestVillageGeneration complete. Converted {ruinsCount} villages to ruins. {neutralVillages.Count} villages remain.");
+                TileData tile = gameState.Map.Tiles[i];
+                if (tile.HasImprovement(ImprovementData.Type.City) && tile.owner == 0)
+                    neutralVillages.Add(tile);
             }
-            catch (Exception ex)
+
+            int playerCount = gameState.PlayerCount;
+            if (playerCount <= 0)
+                return;
+
+            Loader.modLogger?.LogInfo(
+                $"[Conquest-Map] {neutralVillages.Count} neutral villages for {playerCount} players");
+
+            // --- Try emergency city generation to equalize city distribution---
+            int remainder = neutralVillages.Count % playerCount;
+            int citiesToSpawn = (remainder == 0) ? 0 : (playerCount - remainder);
+            if (remainder > 0 && remainder >= playerCount * 0.5f && citiesToSpawn > 0)
             {
-                Loader.modLogger?.LogError($"[Conquest-Map] ConquestVillageGeneration failed: {ex.Message}");
+                Loader.modLogger?.LogInfo(
+                    $"[Conquest-Map] Emergency placement attempted: need {citiesToSpawn} (remainder={remainder})");
+                for (int s = 0; s < citiesToSpawn; s++)
+                {
+                    WorldCoordinates coords = gen.GetEmergencyCityPosition(gameState, gameState.Map);
+                    if (coords == WorldCoordinates.NULL_COORDINATES)
+                    {
+                        Loader.modLogger?.LogInfo("[Conquest-Map] Emergency placement failed: attempt terminated");
+                        break;
+                    }
+                    TileData target = gameState.Map.GetTile(coords);
+                    if (target == null || target.improvement != null)
+                        continue;
+                    gen.SetTileAsCity(target);
+                    AddEmergencyResources(gameState, target);
+                    neutralVillages.Add(target);
+                    Loader.modLogger?.LogInfo($"[Conquest-Map] Emergency city at {coords}");
+                }
+                gen.MakeOcean(gameState.Map, gameState, settings.shallowPercentOfWater == 0f);
             }
+
+            // --- Convert excess cities for distrbution into ruins ---
+            // Scored by distance weighting methods below
+            int maxCitiesPerPlayer = neutralVillages.Count / playerCount;
+            HashSet<WorldCoordinates> kept = new HashSet<WorldCoordinates>();
+            var ownedByPlayer = new Dictionary<byte, List<WorldCoordinates>>();
+            for (int p = 0; p < playerCount; p++)
+                ownedByPlayer[gameState.PlayerStates[p].Id] = new List<WorldCoordinates>();
+
+            for (int round = 0; round < maxCitiesPerPlayer; round++)
+            {
+                for (int p = 0; p < playerCount; p++)
+                {
+                    PlayerState player = gameState.PlayerStates[p];
+                    List<WorldCoordinates> owned = ownedByPlayer[player.Id];
+
+                    TileData? picked = FindBestVillageForPlayer(gameState, neutralVillages, kept, player, owned);
+                    if (picked == null) continue;
+
+                    kept.Add(picked.coordinates);
+                    owned.Add(picked.coordinates);
+                }
+            }
+
+            int ruinsCount = 0;
+            for (int i = 0; i < neutralVillages.Count; i++)
+            {
+                TileData village = neutralVillages[i];
+                if (kept.Contains(village.coordinates)) continue;
+                village.improvement = new ImprovementState
+                {
+                    type = ImprovementData.Type.Ruin,
+                    borderSize = 0,
+                    level = 1,
+                    production = 1,
+                    founded = 0
+                };
+                ruinsCount++;
+            }
+
+            Loader.modLogger?.LogInfo(
+                $"[Conquest-Map] Gen done. cities={kept.Count}, ruins={ruinsCount}");
+        }
+
+        private static void AddEmergencyResources(GameState gameState, TileData cityTile)
+        {
+            var neighbors = gameState.Map.GetArea(cityTile.coordinates, 1, true, false);
+            if (neighbors == null)
+                return;
+            int fish = 0;
+            int fruit = 0;
+            foreach (TileData n in neighbors)
+            {
+                if (n == null || n.coordinates.Equals(cityTile.coordinates))
+                    continue;
+                if (n.resource != null || n.improvement != null)
+                    continue;
+                if (fish < 2 && n.IsWater)
+                {
+                    n.resource = new ResourceState { type = ResourceData.Type.Fish };
+                    fish++;
+                }
+                else if (fruit < 1 && !n.IsWater && n.terrain != TerrainData.Type.Mountain)
+                {
+                    n.resource = new ResourceState { type = ResourceData.Type.Fruit };
+                    fruit++;
+                }
+                if (fish >= 2 && fruit >= 1)
+                    break;
+            }
+        }
+
+        private static TileData? FindBestVillageForPlayer(
+            GameState gameState,
+            List<TileData> neutralVillages,
+            HashSet<WorldCoordinates> alreadyTaken,
+            PlayerState player,
+            List<WorldCoordinates> playerOwnedCoords)
+        {
+            WorldCoordinates capital = player.startTile;
+
+            int cx = capital.X;
+            int cy = capital.Y;
+            int n = 1;
+            if (playerOwnedCoords != null)
+            {
+                for (int i = 0; i < playerOwnedCoords.Count; i++)
+                {
+                    cx += playerOwnedCoords[i].X;
+                    cy += playerOwnedCoords[i].Y;
+                    n++;
+                }
+            }
+            WorldCoordinates centroid = new WorldCoordinates(cx / n, cy / n);
+
+            TileData? best = null;
+            float bestScore = float.MaxValue;
+
+            for (int i = 0; i < neutralVillages.Count; i++)
+            {
+                TileData village = neutralVillages[i];
+                if (village == null) continue;
+                if (alreadyTaken.Contains(village.coordinates)) continue;
+                if (village.improvement == null || village.improvement.type != ImprovementData.Type.City) continue;
+
+                int distCapital = MapDataExtensions.ChebyshevDistance(village.coordinates, capital);
+                int distCentroid = MapDataExtensions.ChebyshevDistance(village.coordinates, centroid);
+
+                // Soft Voronoi: prefer tiles closer to mine than to others
+                float voronoiPenalty = 0;
+                for (int p = 0; p < gameState.PlayerStates.Count; p++)
+                {
+                    PlayerState other = gameState.PlayerStates[p];
+                    if (other == null || other.Id == 255 || other.Id == player.Id) continue;
+                    int distOther = MapDataExtensions.ChebyshevDistance(village.coordinates, other.startTile);
+                    if (distOther < distCapital)
+                    {
+                        voronoiPenalty += (float)((distCapital - distOther) * 25);
+                    }
+                }
+
+                float score = distCapital + 2.5f * distCentroid + voronoiPenalty;
+
+                if (score < bestScore)
+                {
+                    bestScore = score;
+                    best = village;
+                }
+            }
+
+            return best;
         }
 
         // =========================================================================
@@ -296,9 +727,12 @@ namespace PolyMode
         // =========================================================================
         [HarmonyPostfix]
         [HarmonyPatch(typeof(StartMatchAction), nameof(StartMatchAction.ExecuteDefault))]
-        private static void StartMatchAction_InitializeVillages(StartMatchAction __instance, GameState gameState)
+        private static void StartMatchAction_InitializeVillages(
+            StartMatchAction __instance,
+            GameState gameState)
         {
-            if (gameState?.Settings == null) return;
+            if (gameState?.Settings == null)
+                return;
             try
             {
                 if (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
@@ -307,12 +741,29 @@ namespace PolyMode
                     return;
                 }
 
-                Loader.modLogger?.LogInfo("[Conquest-Match] Executing village initialization in StartMatchAction...");
+                if (gameState.Settings.mapPreset == (MapPreset)6)
+                {
+                    foreach (TileData tile in gameState.Map.tiles)
+                    {
+                        if (gameState.TileIsCapitalOfPlayer(tile.coordinates) != 0)
+                        {
+                            foreach (TileData? tile2 in gameState.Map.GetTileNeighborsSorted(tile.coordinates))
+                            {
+                                if (tile2.improvement != null && tile2.improvement.type == ImprovementData.Type.City)
+                                {
+                                    tile2.improvement = null;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Loader.modLogger?.LogInfo("[Conquest-Match] Village distribution + init...");
                 ConquestVillageDistribution(gameState);
             }
             catch (Exception ex)
             {
-                Loader.modLogger?.LogError($"[Conquest-Match] Critical failure in StartMatchAction: {ex.Message}");
+                Loader.modLogger?.LogError($"[Conquest-Match] StartMatch: {ex}");
             }
         }
 
@@ -329,56 +780,40 @@ namespace PolyMode
             }
 
             int playerCount = gameState.PlayerCount;
-            if (playerCount == 0) return;
+            if (playerCount <= 0) return;
 
             int maxCitiesPerPlayer = neutralVillages.Count / playerCount;
-            HashSet<WorldCoordinates> assignedCoordinates = new HashSet<WorldCoordinates>();
+            HashSet<WorldCoordinates> assigned = new HashSet<WorldCoordinates>();
+            var ownedByPlayer = new Dictionary<byte, List<WorldCoordinates>>();
+            for (int p = 0; p < playerCount; p++)
+                ownedByPlayer[gameState.PlayerStates[p].Id] = new List<WorldCoordinates>();
 
-            Loader.modLogger?.LogInfo($"[Conquest-Match] {neutralVillages.Count} villages to be initialized. Allocating {maxCitiesPerPlayer} per player...");
+            Loader.modLogger?.LogInfo(
+                $"[Conquest-Match] {neutralVillages.Count} neutrals → {maxCitiesPerPlayer} per player");
 
             for (int round = 0; round < maxCitiesPerPlayer; round++)
             {
                 for (int p = 0; p < playerCount; p++)
                 {
                     PlayerState player = gameState.PlayerStates[p];
-                    TileData closestVillage = AssignClosestVillage(gameState, neutralVillages, assignedCoordinates, player);
-
-                    if (closestVillage != null)
-                    {
-                        ConquestInitializeCity(gameState, closestVillage, player);
-                    }
+                    List<WorldCoordinates> owned = ownedByPlayer[player.Id];
+                    TileData? village = FindBestVillageForPlayer(gameState, neutralVillages, assigned, player, owned);
+                    if (village == null) continue;
+                    assigned.Add(village.coordinates);
+                    owned.Add(village.coordinates);
+                    ConquestInitializeCity(gameState, village, player);
                 }
             }
 
-            Loader.modLogger?.LogInfo($"[Conquest-Match] All cities initialized successfully!");
-        }
-
-        private static TileData AssignClosestVillage(
-            GameState gameState, List<TileData> neutralVillages, HashSet<WorldCoordinates> assignedCoordinates, PlayerState player)
-        {
-            WorldCoordinates capitalCoords = player.startTile;
-            TileData? closestVillage = null;
-            int closestDistance = int.MaxValue;
-
-            foreach (var village in neutralVillages)
+            foreach (TileData tile2 in gameState.Map.tiles)
             {
-                if (assignedCoordinates.Contains(village.coordinates)) continue;
-
-                int distance = MapDataExtensions.ManhattanDistance(capitalCoords, village.coordinates);
-                if (distance < closestDistance)
+                if (tile2.improvement != null && tile2.improvement.type == ImprovementData.Type.City && tile2.owner == 0)
                 {
-                    closestDistance = distance;
-                    closestVillage = village;
+                    tile2.improvement = null;
                 }
             }
 
-            if (closestVillage != null)
-            {
-                assignedCoordinates.Add(closestVillage.coordinates);
-                return closestVillage;
-            }
-
-            return gameState.Map.GetTile(WorldCoordinates.NULL_COORDINATES);
+            Loader.modLogger?.LogInfo("[Conquest-Match] All cities initialized");
         }
 
         private static void ConquestInitializeCity(GameState state, TileData tile, PlayerState player)
@@ -387,49 +822,41 @@ namespace PolyMode
             {
                 tile.owner = player.Id;
                 tile.capitalOf = 0;
-
                 TribeData tribeData;
                 if (state.GameLogicData.TryGetData(player.tribe, out tribeData) && tribeData != null)
                 {
-                    string generatedName = MapDataExtensions.GenerateCityName(state, tile.coordinates, tribeData, player.skinType);
+                    string name = MapDataExtensions.GenerateCityName(
+                        state, tile.coordinates, tribeData, player.skinType);
                     if (tile.improvement != null)
-                    {
-                        tile.improvement.name = generatedName;
-                    }
+                        tile.improvement.name = name;
                 }
-
                 player.cities++;
-
                 UnitData unitData;
                 if (state.GameLogicData.TryGetData(UnitData.Type.Warrior, out unitData))
                 {
-                    UnitState unitState = ActionUtils.TrainUnitScored(state, player, tile, unitData);
-                    unitState.attacked = false;
-                    unitState.moved = false;
+                    UnitState unit = ActionUtils.TrainUnitScored(state, player, tile, unitData);
+                    unit.attacked = false;
+                    unit.moved = false;
                 }
-
-                Il2CppSystem.Collections.Generic.List<TileData> cityArea = ActionUtils.GetCityAreaSorted(state, tile);
+                var cityArea = ActionUtils.GetCityAreaSorted(state, tile);
                 if (cityArea != null)
                 {
                     for (int j = 0; j < cityArea.Count; j++)
                     {
-                        TileData territoryTile = cityArea[j];
-                        if (territoryTile != null)
-                        {
-                            territoryTile.owner = player.Id;
-                            territoryTile.rulingCityCoordinates = tile.coordinates;
-                        }
+                        TileData territory = cityArea[j];
+                        if (territory == null)
+                            continue;
+                        territory.owner = player.Id;
+                        territory.rulingCityCoordinates = tile.coordinates;
                     }
                 }
-
                 ActionUtils.RuleArea(state, player, tile, true);
                 ActionUtils.ExploreFromTile(state, player, tile, 2, true);
-
-                Loader.modLogger?.LogInfo($"[Conquest-Match] City initialized for Player {player.Id} at {tile.coordinates}.");
+                Loader.modLogger?.LogInfo($"[Conquest-Match] City for P{player.Id} at {tile.coordinates}");
             }
             catch (Exception ex)
             {
-                Loader.modLogger?.LogError($"[Conquest-Match] City initialization failed: {ex.Message}");
+                Loader.modLogger?.LogError($"[Conquest-Match] Init city failed: {ex}");
             }
         }
 
@@ -457,7 +884,11 @@ namespace PolyMode
                 if (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
                     && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
                 {
-                    return;
+                    if (improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel"))
+                    {
+                        __result = false;
+                        return;
+                    }
                 }
 
                 if (improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel") && tile.owner == playerState.Id)
@@ -702,7 +1133,7 @@ namespace PolyMode
                 __result = 40;
             }
 
-            if (tile != null && tile?.improvement?.type == EnumCache<ImprovementData.Type>.GetType("citadel") && tile.terrain == TerrainData.Type.Water && tile?.unit?.UnitData.attack <= 30 && tile.owner == unit.owner)
+            if (tile != null && tile?.improvement?.type == EnumCache<ImprovementData.Type>.GetType("citadel") && tile.terrain.IsWater() && tile?.unit?.UnitData.attack <= 30 && tile.owner == unit.owner)
             {
                 __result = 40;
             }
@@ -749,7 +1180,7 @@ namespace PolyMode
 
                     foreach (UnitData unitData in gameState.GameLogicData.GetUnlockedUnits(player, gameState, false))
                     {
-                        if (CommandValidation.HasUnitTerrain(gameState, tile.coordinates, unitData) && unitData.cost != 8)
+                        if (CommandValidation.HasUnitTerrain(gameState, tile.coordinates, unitData) && unitData.cost < 8)
                         {
                             TrainCommand trainCommand = new TrainCommand(player.Id, unitData.type, tile.coordinates);
                             if (!player.blockTrainUnits && (includeUnavailable || trainCommand.IsValid(gameState)))
@@ -784,77 +1215,141 @@ namespace PolyMode
 
         [HarmonyPrefix]
         [HarmonyPatch(typeof(ActionUtils), nameof(ActionUtils.GetCityAreaSorted))]
-        private static bool GetCityAreaSorted_Conquest(GameState gameState, TileData cityTile, ref Il2CppSystem.Collections.Generic.List<TileData> __result)
+        private static bool GetCityAreaSorted_Conquest(
+            GameState gameState,
+            TileData cityTile,
+            ref Il2CppSystem.Collections.Generic.List<TileData> __result)
         {
             try
             {
-                if (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
-                    && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                if (gameState?.Settings == null || gameState.Map == null || cityTile == null)
                 {
                     return true;
                 }
 
-                PlayerState player;
-                if (gameState.TryGetPlayer(cityTile.owner, out player))
-                {
-                    WorldCoordinates centerCoords = (cityTile.rulingCityCoordinates == WorldCoordinates.NULL_COORDINATES) 
-                        ? cityTile.coordinates 
-                        : cityTile.rulingCityCoordinates;
-
-                    TileData cityCenter = GameManager.GameState.Map.GetTile(centerCoords);
-                    
-                    if (cityCenter == null) return true; 
-
-                    Il2CppSystem.Collections.Generic.List<TileData> list = new Il2CppSystem.Collections.Generic.List<TileData>();
-                    TileData[] areaSorted = gameState.Map.GetAreaSorted(cityCenter.coordinates, gameState.Settings.MapSize, true, true);
-                    
-                    if (areaSorted != null && areaSorted.Length > 0)
-                    {
-                        foreach (TileData tileData in areaSorted)
-                        {
-                            if (tileData.rulingCityCoordinates == cityCenter.coordinates || tileData.coordinates == cityCenter.coordinates)
-                            {
-                                list.Add(tileData);
-                            }
-                        }
-                    }
-
-                    __result = list; 
-                    return false;
+                if (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                    && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                {    
+                    return true;
                 }
 
-                return true;
+                if (cityTile.owner == 0)
+                {
+                    return true;
+                }
+
+                if (!gameState.TryGetPlayer(cityTile.owner, out _))
+                {
+                    return true;
+                }
+
+                WorldCoordinates centerCoords =
+                    cityTile.rulingCityCoordinates == WorldCoordinates.NULL_COORDINATES
+                        ? cityTile.coordinates
+                        : cityTile.rulingCityCoordinates;
+
+                // Use the same gameState that was passed in — NOT GameManager.GameState
+                TileData cityCenter = gameState.Map.GetTile(centerCoords);
+                if (cityCenter == null)
+                    return true;
+
+                var list = new Il2CppSystem.Collections.Generic.List<TileData>();
+                var visited = new HashSet<WorldCoordinates>();
+                var queue = new Queue<TileData>();
+
+                queue.Enqueue(cityCenter);
+                visited.Add(cityCenter.coordinates);
+
+                while (queue.Count > 0)
+                {
+                    TileData current = queue.Dequeue();
+                    if (current == null)
+                        continue;
+
+                    list.Add(current);
+
+                    TileData[] neighbors = MapDataExtensions.GetTileNeighborsSorted(
+                        gameState.Map, current.coordinates);
+                    if (neighbors == null) continue;
+
+                    for (int i = 0; i < neighbors.Length; i++)
+                    {
+                        TileData n = neighbors[i];
+                        if (n == null || visited.Contains(n.coordinates))
+                            continue;
+
+                        if (n.coordinates == centerCoords
+                            || n.rulingCityCoordinates == centerCoords)
+                        {
+                            visited.Add(n.coordinates);
+                            queue.Enqueue(n);
+                        }
+                    }
+                }
+
+                __result = list;
+                return false;
             }
             catch (Exception ex)
             {
-                Loader.modLogger?.LogError($"[Conquest] Error in GetCityAreaSorted Prefix: {ex}");
+                Loader.modLogger?.LogError($"[Conquest] GetCityAreaSorted: {ex}");
                 return true;
             }
         }
 
         [HarmonyPrefix]
         [HarmonyPatch(typeof(GameLogicData), nameof(GameLogicData.HasImprovementWithinCityBorders))]
-        private static bool HasImprovementWithinCityBorders_Conquest(MapData map, WorldCoordinates cityCoordinates, ImprovementData.Type improvementType, ref bool __result)
+        private static bool HasImprovementWithinCityBorders_Conquest(
+            MapData map,
+            WorldCoordinates cityCoordinates,
+            ImprovementData.Type improvementType,
+            ref bool __result)
         {
             try
             {
-                TileData cityTile = map.GetTile(cityCoordinates);
-                Il2CppSystem.Collections.Generic.List<TileData> cityArea = ActionUtils.GetCityAreaSorted(GameManager.GameState, cityTile);
-                for (int i = 0; i < cityArea.Count; i++)
+                if (map == null)
+                    return true;
+
+                GameState gameState = GameManager.GameState;
+                if (gameState?.Settings == null)
+                    return true;
+
+                if (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                    && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
                 {
-                    TileData tileData = cityArea[i];
-                    if (!(tileData.rulingCityCoordinates != cityCoordinates) && tileData.HasImprovement(improvementType))
+                    return true;
+                }
+
+                TileData cityTile = map.GetTile(cityCoordinates);
+                if (cityTile == null)
+                {
+                    __result = false;
+                    return false;
+                }
+
+                var area = ActionUtils.GetCityAreaSorted(gameState, cityTile);
+                if (area == null)
+                {
+                    __result = false;
+                    return false;
+                }
+
+                for (int i = 0; i < area.Count; i++)
+                {
+                    TileData t = area[i];
+                    if (t?.improvement != null && t.improvement.type == improvementType)
                     {
                         __result = true;
                         return false;
                     }
                 }
+
                 __result = false;
                 return false;
             }
             catch (Exception ex)
             {
-                Loader.modLogger?.LogError($"[Conquest] Error in HasImprovementWithinCityBorders Prefix: {ex}");
+                Loader.modLogger?.LogError($"[Conquest] HasImprovementWithinCityBorders: {ex}");
                 return true;
             }
         }
@@ -905,8 +1400,14 @@ namespace PolyMode
             }
             else
             {
-                cityLimit = 5;
-                capitalLimit = 5;
+                cityLimit = 6;
+                capitalLimit = 6;
+            }
+
+            if (gameState.Settings.mapPreset == MapPreset.Continents || gameState.Settings.mapPreset == MapPreset.Pangea)
+            {
+                cityLimit = cityLimit > 3? cityLimit + 1 : cityLimit + 2;
+                capitalLimit = capitalLimit > 3? capitalLimit + 1 : capitalLimit + 2;
             }
 
             if (tile.terrain == TerrainData.Type.Mountain && !playerState.HasAbility(EnumCache<PlayerAbility.Type>.GetType("mountaincitadel"), gameState))
@@ -934,18 +1435,17 @@ namespace PolyMode
         // =========================================================================
         [HarmonyPostfix]
         [HarmonyPatch(typeof(PathFinder), nameof(PathFinder.IsTileAccessible))]
-        private static void IsTileAccessible_DenyUnusualUnits(TileData tile, TileData origin, PathFinderSettings settings, ref bool __result)
+        private static void IsTileAccessible_Deny(TileData tile, TileData origin, PathFinderSettings settings, ref bool __result)
         {
-            if (tile.improvement != null && origin.unit != null)
+            if (origin.unit != null)
             {
-                if ((tile.terrain != TerrainData.Type.Water && tile.terrain != TerrainData.Type.Ocean) || tile.improvement.type != EnumCache<ImprovementData.Type>.GetType("citadel")) 
-                {
-                    return;
-                }
 
                 if (UnitDataExtensions.HasAbility(origin.unit, UnitAbility.Type.Hide) || origin.unit.type == UnitData.Type.Dagger || origin.unit.type == UnitData.Type.Giant)
                 {
-                    __result = false;
+                    if (tile.terrain.IsWater() && tile.improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel"))
+                    {
+                        __result = false;
+                    }
                 }
             }
         }
@@ -995,7 +1495,7 @@ namespace PolyMode
             }            
         }*/
 
-        [HarmonyPrefix]
+        /*[HarmonyPrefix]
         [HarmonyPriority(Priority.First)]
         [HarmonyPatch(typeof(ActionUtils), nameof(ActionUtils.TrainUnit))]
         private static bool TrainUnit_BypassPolyMod(ref UnitState __result, GameState gameState, PlayerState playerState, TileData tile, ref UnitData unitData)
@@ -1005,11 +1505,98 @@ namespace PolyMode
                 return true;
             }
 
-            if (unitData.type == UnitData.Type.Transportship && tile.improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel"))
+            if (unitData.type == UnitData.Type.Transportship && tile.terrain.IsWater() && tile.improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel"))
             {
                 gameState.GameLogicData.TryGetData(UnitData.Type.Rammership, out unitData);
+                return false;
             }
             return true;
+        }*/
+
+        [HarmonyPrefix]
+        [HarmonyPatch(typeof(MoveAction), nameof(MoveAction.ExecuteDefault))]
+        private static bool MoveAction_WaterCitadel(MoveAction __instance, GameState gameState)
+        {
+			WorldCoordinates worldCoordinates = __instance.Path[0];
+			WorldCoordinates worldCoordinates2 = __instance.Path[__instance.Path.Count - 1];
+			TileData tile = gameState.Map.GetTile(worldCoordinates);
+			TileData tile2 = gameState.Map.GetTile(worldCoordinates2);
+
+            if (tile == null) return true;
+
+            if (tile.improvement == null) return true;
+
+            if (!tile.terrain.IsWater()) return true;
+
+            if (tile.improvement.type != EnumCache<ImprovementData.Type>.GetType("citadel")) return true;
+
+            PlayerState playerState;
+            if (!gameState.TryGetPlayer(__instance.PlayerId, out playerState) || playerState == null)
+            {
+                return true;
+            }
+
+            UnitData unitData;
+            if (!gameState.GameLogicData.TryGetData(EnumCache<UnitData.Type>.GetType("citadelrammership"), out unitData) || unitData == null)
+            {
+                return true;
+            }
+
+            if ((tile2.unit.HasAbility(UnitAbility.Type.Water) || tile2.unit.HasAbility(UnitAbility.Type.Swim) || tile2.unit.HasAbility(UnitAbility.Type.Fly)) && tile.terrain.IsWater() && tile.improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel"))
+            {
+                return true;
+            }
+
+            if (tile.terrain.IsWater() && tile.improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel"))
+            {
+                /*if (tile.unit.passengerUnit != null)
+                {
+				    gameState.ActionStack.Add(new DisembarkAction(__instance.PlayerId, worldCoordinates));
+                }*/
+
+                gameState.TryGetPlayer(__instance.PlayerId, out playerState);    
+                UnitState cache = tile2.unit;
+                UnitState unitState = ActionUtils.TrainUnit(gameState, playerState, tile, unitData);
+			
+                unitState.UnitData = unitData;
+                unitState.health = (ushort)unitData.health;
+                unitState.passengerUnit = null;
+                unitState.xp = cache.xp;
+                unitState.direction = cache.direction;
+                unitState.flipped = cache.flipped;
+                unitState.attacked = true;
+                unitState.moved = true;
+
+                tile.SetUnit(unitState);
+                tile2.SetUnit(null);
+                unitState.coordinates = worldCoordinates;
+
+                Tile instance = tile.GetInstance();
+                Tile instance2 = tile2.GetInstance();
+                instance.Render();
+                instance2.Render();
+
+                return false;
+            }
+            return true;
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(UnitDataExtensions), nameof(UnitDataExtensions.GetAllowedTerrain))]
+        private static void GetAllowedTerrain_CitadelRammership(UnitState unit, GameState state, ref Il2CppSystem.Collections.Generic.List<TerrainData>? __result)
+        {
+            if (unit.type == EnumCache<UnitData.Type>.GetType("citadelrammership"))
+            {
+                Il2CppSystem.Collections.Generic.List<TerrainData> list = new Il2CppSystem.Collections.Generic.List<TerrainData>();
+                foreach (Il2CppSystem.Collections.Generic.KeyValuePair<TerrainData.Type, TerrainData> keyValuePair in state.GameLogicData.AllTerrainData)
+				{
+					if (keyValuePair.Key == TerrainData.Type.Water || keyValuePair.Key == TerrainData.Type.Ocean)
+					{
+						list?.Add(keyValuePair.Value);
+					}
+				}
+                __result = list;
+            }
         }
 
         // =========================================================================
@@ -1208,9 +1795,19 @@ namespace PolyMode
                 }
             }
 
-            // 5. Generate ruins
+            // 5. Generate ruins (or mountain?!?!)
             if (isCityUpgrade != true)
             {
+                bool isWaterCity = true;
+                foreach (TileData neighbour in gameState.Map.GetTileNeighborsSorted(cityTile.coordinates))
+                {
+                    if (!neighbour.terrain.IsWater())
+                    {
+                        isWaterCity = false;
+                        break;
+                    }
+                }
+
                 cityTile.improvement = new ImprovementState
                 {
                     type = ImprovementData.Type.Ruin,
@@ -1219,6 +1816,11 @@ namespace PolyMode
                     production = 1,
                     founded = 0
                 };
+
+                if (isWaterCity)
+                {
+                    cityTile.terrain = TerrainData.Type.Mountain;
+                }
             }
             else
             {

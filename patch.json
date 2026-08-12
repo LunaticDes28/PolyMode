@@ -64,22 +64,21 @@
 		}
     },
     "unitData":{
-        "rewardwarrior": {
-			"health": 150,
-			"defence": 20,
-			"movement": 1,
+		"citadelrammership": {
+			"health": 100,
+			"movement": 3,
 			"range": 1,
-			"attack": 20,
-			"cost": 3,
+			"defence": 30,
+			"attack": 30,
+			"hidden": true,
 			"unitAbilities": [
 				"dash",
-				"fortify",
-				"land",
-                "independent"
+				"swim",
+				"water"
 			],
-			"weapon": 1,
+			"weapon": 16,
 			"promotionLimit": 3,
-            "prefab": "warrior",
+			"prefab": "rammership",
 			"idx": -1
 		}
     },
@@ -101,6 +100,10 @@
 			"idx": -1,
 			"cityRequirements": [
 				{
+					"mode": [
+						"conquest",
+						"reign"	
+					],
 					"level": 1,
 					"notCapital": true
 				}
@@ -110,6 +113,10 @@
 			"idx": -1,
 			"cityRequirements": [
 				{
+					"mode": [
+						"conquest",
+						"reign"	
+					],
 					"level": 2,
 					"notCapital": false
 				}
@@ -119,6 +126,10 @@
 			"idx": -1,
 			"cityRequirements": [
 				{
+					"mode": [
+						"conquest",
+						"reign"	
+					],
 					"level": 3,
 					"notCapital": false
 				}

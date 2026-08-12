@@ -201,6 +201,13 @@ namespace PolyMode
                 $"enemy={result.EnemyCityCount} owned={result.OwnedCityCount}");
         }
 
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="gameState"></param>
+        /// <param name="player"></param>
+        /// <returns></returns>
+
         public static HashSet<WorldCoordinates> BuildDangerSetFromOptions(
             GameState gameState, PlayerState player)
         {
@@ -287,6 +294,51 @@ namespace PolyMode
                 if (area[i] != null)
                     danger.Add(area[i].coordinates);
             }
+        }
+
+        /// <summary>
+        /// Land tile whose neighbors are mostly water/ocean (vanilla-style sea island / coastal scrap).
+        /// </summary>
+        public static bool IsIsolatedLandInWater(GameState gameState, TileData tile)
+        {
+            if (tile == null || tile.IsWater)
+                return false;
+
+            // Must be land terrain
+            if (tile.terrain == TerrainData.Type.Water || tile.terrain == TerrainData.Type.Ocean)
+                return false;
+
+            TileData[] neighbors = MapDataExtensions.GetAreaSorted(
+                gameState.Map, tile.coordinates, 1, true, false);
+            if (neighbors == null || neighbors.Length == 0)
+                return false;
+
+            int water = 0;
+            int land = 0;
+
+            for (int i = 0; i < neighbors.Length; i++)
+            {
+                TileData n = neighbors[i];
+                if (n == null || (n.coordinates.X == tile.coordinates.X && n.coordinates.Y == tile.coordinates.Y))
+                    continue;
+
+                if (n.IsWater
+                    || n.terrain == TerrainData.Type.Water
+                    || n.terrain == TerrainData.Type.Ocean)
+                    water++;
+                else
+                    land++;
+            }
+
+            int total = water + land;
+            if (total == 0)
+                return false;
+
+            // Isolated: no land neighbors, or almost only water (e.g. 1 land bridge)
+            if (land == 0)
+                return true;
+
+            return water >= 5 && land <= 1;
         }
     }
 }

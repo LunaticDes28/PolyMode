@@ -35,6 +35,9 @@
     "building_ability_citadel": {
 		"English": "Expands border of its city to adjacent tiles. You can train units on it and defence bonus is applied."
 	},
+    "unit_names_citadelrammership": {
+		"English": "Rammer"
+	},
     "player_abilities_mountaincitadel": {
 		"English": "Mountain Citadel"
 	},    

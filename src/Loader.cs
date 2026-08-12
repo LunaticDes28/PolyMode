@@ -45,7 +45,7 @@ namespace PolyMode
             RegisterCustomGameMode("reign");
             //RegisterCustomCityReward("evacuation");
             //RegisterCustomCityReward("valhalla");
-            // RegisterCustomCityReward("taxreform");
+            //RegisterCustomCityReward("taxreform");
 
             PolyMod.Loader.AddPatchDataType("cityReward", typeof(CityReward));
             PolyMod.Loader.AddPatchDataType("opinion", typeof(OpinionManager.Type));
@@ -60,8 +60,8 @@ namespace PolyMode
                 modLogger?.LogInfo($"[Conquest-Loader] Initializing custom GameMode registration for key: '{id}'");
 
                 // 1. Double map the string identifier to the next available native index slot
-                EnumCache<GameMode>.AddMapping(id, (GameMode)PolyMod.Registry.gameModesAutoidx);
-                EnumCache<GameMode>.AddMapping(id, (GameMode)PolyMod.Registry.gameModesAutoidx);
+                EnumCache<GameMode>.AddMapping(id, (GameMode)Registry.gameModesAutoidx);
+                EnumCache<GameMode>.AddMapping(id, (GameMode)Registry.gameModesAutoidx);
                 
                 modLogger?.LogInfo($"[Conquest-Loader] EnumCache mapping successfully bound to index: {PolyMod.Registry.gameModesAutoidx}");
 

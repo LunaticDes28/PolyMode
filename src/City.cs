@@ -9,6 +9,7 @@ using UnityEngine;
 using System.Linq;
 using Il2CppSystem.Linq;
 using Newtonsoft.Json.Linq;
+using Il2CppSystem.Dynamic.Utils;
 
 namespace PolyMode
 {
@@ -16,6 +17,7 @@ namespace PolyMode
     {
         public class CityRequirement
         {
+            public string[]? mode { get; set; }
             public int level { get; set; }
             public bool notCapital { get; set; }
         }
@@ -34,15 +36,15 @@ namespace PolyMode
                 try
                 {
                     if (patch == null || patch["cityReward"] == null) return;
-                    Loader.modLogger?.LogInfo($"[Conquest-Hook] Successfully dynamic-mapped cityReward");
+                    Loader.modLogger?.LogInfo($"[Conquest-Hook] Successfully located Type cityReward");
 
                     var cityRewardNode = patch["cityReward"];
-                    Loader.modLogger?.LogInfo($"[Conquest-Hook] Raw node type: {cityRewardNode?.GetType()?.Name}");
+                    // Loader.modLogger?.LogInfo($"[Conquest-Hook] Raw node type: {cityRewardNode?.GetType()?.Name}");
 
                     JObject? jObj = cityRewardNode?.Cast<JObject>();
                     if (jObj != null)
                     {
-                        Loader.modLogger?.LogInfo($"[Conquest-Hook] node conversion success, item count: {jObj.Count}");
+                        Loader.modLogger?.LogInfo($"[Conquest-Hook] Node conversion success, item count: {jObj.Count}");
                         JProperty[] properties = jObj.Properties().ToArray();
 
                         for (int i = 0; i < properties.Length; i++)
@@ -55,12 +57,12 @@ namespace PolyMode
                             Loader.modLogger?.LogInfo($"[Conquest-Hook] Successfully dynamic-mapped ID {id}");
 
                             if (rewardData == null) continue;
-                            Loader.modLogger?.LogInfo($"[Conquest-Hook] cityReward not null");
+                            Loader.modLogger?.LogInfo($"[Conquest-Hook] cityReward with ID {id} not empty");
 
                             CityRewardExtensions extension = new CityRewardExtensions();
                             extension.cityRequirements = new System.Collections.Generic.List<CityRequirement>();
 
-                            Loader.modLogger?.LogInfo($"[Conquest-Hook] CityRequirement initialized");
+                            // Loader.modLogger?.LogInfo($"[Conquest-Hook] CityRequirement initialized");
 
                             var reqToken = rewardData["cityRequirements"] ?? rewardData["CityRequirements"];
 
@@ -76,8 +78,33 @@ namespace PolyMode
                                     JToken item = reqArray[j];
                                     if (item == null) continue;
 
+                                    System.Collections.Generic.List<string> reqModeList = new System.Collections.Generic.List<string>();
                                     int reqLevel = 0;
                                     bool reqNotCapital = false;
+
+                                    if (item["mode"] != null)
+                                    {
+                                        JToken modeToken = item["mode"];
+                                        
+                                        if (modeToken.Type == JTokenType.Array)
+                                        {
+                                            JArray modeArray = modeToken.Cast<JArray>(); 
+                                            Loader.modLogger?.LogInfo($"[Conquest-Hook] Found mode array with {modeArray.Count} items");
+
+                                            for (int m = 0; m < modeArray.Count; m++)
+                                            {
+                                                if (modeArray[m] != null)
+                                                {
+                                                    reqModeList.Add(modeArray[m].ToString());
+                                                }
+                                            }
+                                            
+                                        }
+                                        else if (modeToken.Type == JTokenType.String)
+                                        {
+                                            reqModeList.Add(modeToken.ToString());
+                                        }
+                                    }
                                     
                                     if (item["level"] != null)
                                     {
@@ -93,11 +120,12 @@ namespace PolyMode
 
                                     CityRequirement req = new CityRequirement
                                     {
+                                        mode = reqModeList.Count > 0 ? reqModeList.ToArray() : null,
                                         level = reqLevel,
                                         notCapital = reqNotCapital
                                     };
                                     extension.cityRequirements.Add(req);
-                                    Loader.modLogger?.LogInfo($"[Conquest-Hook] Parsed req -> level: {reqLevel}, notCapital: {reqNotCapital}");
+                                    Loader.modLogger?.LogInfo($"[Conquest-Hook] Parsed req -> mode: {reqModeList.ToString}, level: {reqLevel}, notCapital: {reqNotCapital}");
                                 }
                             }
 
@@ -120,7 +148,7 @@ namespace PolyMode
 
         [HarmonyPostfix]
         [HarmonyPatch(typeof(PolyMod.Loader), nameof(PolyMod.Loader.LoadGameLogicDataPatch))]
-        public static void CityRewardPatch_ThirdOption(Mod mod, JObject gld, JObject patch)
+        public static void CityRewardPatch_CustomOptions(Mod mod, JObject gld, JObject patch)
         {
             try
             {
@@ -139,13 +167,13 @@ namespace PolyMode
         
         [HarmonyPrefix]
         [HarmonyPatch(typeof(CommandTriggerUIUtils), nameof(CommandTriggerUIUtils.ShowCommandTrigger))]
-        public static bool ShowCommandTrigger_ThirdOption(CommandTrigger commandTrigger)
+        public static bool ShowCommandTrigger_CustomOptions(CommandTrigger commandTrigger)
         {
-            if (GameManager.GameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+            /*if (GameManager.GameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
                 && GameManager.GameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
             {
                 return true;
-            }
+            }*/
 
             PlayerState playerState;
             GameManager.GameState.TryGetPlayer(GameManager.GameState.CurrentPlayer, out playerState);
@@ -191,46 +219,54 @@ namespace PolyMode
 
         [HarmonyPostfix]
         [HarmonyPatch(typeof(ImprovementDataExtensions), nameof(ImprovementDataExtensions.GetCityRewardsForLevel))]
-        public static void GetCityRewardsForLevel_ThirdOption(ref Il2CppStructArray<CityReward> __result, ImprovementData data, int level)
+        public static void GetCityRewardsForLevel_CustomOptions(
+            ImprovementData data,
+            int level,
+            ref Il2CppStructArray<CityReward> __result)
         {
+            var list = new Il2CppSystem.Collections.Generic.List<CityReward>();
+
             if (level == 1)
             {
-                __result = new CityReward[]
-                {
-                CityReward.Explorer,
-                CityReward.Workshop,
-                EnumCache<CityReward>.GetType("evacuation")
-                };
+                list.Add(CityReward.Workshop);
+                list.Add(CityReward.Explorer);
             }
-            else
-            if (level == 2)
+            else if (level == 2)
             {
-                __result = new CityReward[]
-                {
-                CityReward.CityWall,
-                CityReward.Resources,
-                EnumCache<CityReward>.GetType("valhalla")
-                };
+                list.Add(CityReward.CityWall);
+                list.Add(CityReward.Resources);
             }
-            else
-            if (level == 3)
+            else if (level == 3)
             {
-                __result = new CityReward[]
-                {
-                CityReward.BorderGrowth,
-                CityReward.PopulationGrowth,
-                EnumCache<CityReward>.GetType("taxreform")
-                };
+                list.Add(CityReward.BorderGrowth);
+                list.Add(CityReward.PopulationGrowth);
             }
-            else
-            if (level >= 4)
+            else if (level >= 4)
             {
-                __result = new CityReward[]
-                {
-                CityReward.Park,
-                CityReward.SuperUnit,
-                };
+                list.Add(CityReward.Park);
+                list.Add(CityReward.SuperUnit);
             }
+
+            if (CityRewardExtensionsManager.CustomExtensions != null)
+            {
+                foreach (var kvp in CityRewardExtensionsManager.CustomExtensions)
+                {
+                    CityReward customReward = EnumCache<CityReward>.GetType(kvp.Key);
+                    var extension = kvp.Value;
+                    if (extension?.cityRequirements == null)
+                        continue;
+
+                    foreach (var req in extension.cityRequirements)
+                    {
+                        if (level == req.level && !list.Contains(customReward))
+                        {
+                            list.Add(customReward);
+                        }
+                    }
+                }
+            }
+
+            __result = (Il2CppStructArray<CityReward>)list.ToArray();
         }
 
         public static CityReward[] GetCustomCityRewards(TileData tile)
@@ -259,18 +295,38 @@ namespace PolyMode
 
                     foreach (var req in extension.cityRequirements)
                     {
+                        Loader.modLogger?.LogInfo($"MReq: {req.mode}");
                         Loader.modLogger?.LogInfo($"LReq: {req.level}");
                         Loader.modLogger?.LogInfo($"CReq: {req.notCapital}");
+
+                        bool modeMatch = false;
+
+                        if (req.mode != null)
+                        {
+                            foreach (string item in req.mode)
+                            {
+                                if (GameManager.PreliminaryGameSettings.rulesGameMode == EnumCache<GameMode>.GetType(item))
+                                {
+                                    modeMatch = true;
+                                    break;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            modeMatch = true;
+                        }
 
                         bool levelMatch = tile.improvement.level == req.level + 1;
 
                         bool capitalMatch = !req.notCapital || tile.capitalOf == 0;
 
+                        Loader.modLogger?.LogInfo($"Mode: {modeMatch}");
                         Loader.modLogger?.LogInfo($"Level: {levelMatch}");
                         Loader.modLogger?.LogInfo($"Capital: {capitalMatch}");
 
 
-                        if (levelMatch && capitalMatch)
+                        if (modeMatch && levelMatch && capitalMatch)
                         {
                             meetsRequirements = true;
                             break;
@@ -379,17 +435,17 @@ namespace PolyMode
 
             if (hasVal)
             {
-                PolytopiaBackendBase.Common.TribeType tribe = __instance.Tribe;
-                PolytopiaBackendBase.Common.SkinType skinType = __instance.SkinType;
+                TribeType tribe = __instance.Tribe;
+                SkinType skinType = __instance.SkinType;
                 PolytopiaSpriteRenderer house = __instance.GetHouse(tribe, __instance.HOUSE_WORKSHOP, skinType);
-                house.sprite = PolyMod.Registry.GetSprite("valhalla");
+                house.sprite = Registry.GetSprite("valhalla");
                 int count = __instance.plots.Count;
-                int num = (int)System.Math.Floor(System.Math.Sqrt(count));
+                int num = (int)Math.Floor(Math.Sqrt(count));
 
                 // Put Valhalla on the tallest column so it doesnt obstruct anything with its post-rendering rendering
                 int tallestplotidx = 0;
                 int tallestplotamount = -1;
-                for(int i=1; i<count; i++) //goes from 1 so it doesnt appear on capital
+                for(int i = 1; i < count; i++) //goes from 1 so it doesnt appear on capital
                 {
                     if(__instance.plots[i].floors > tallestplotamount)
                     {
@@ -543,7 +599,7 @@ namespace PolyMode
 
                 // Tile instance = tile.GetInstance();
 
-                Il2CppReferenceArray<TileData> areaSorted = GameManager.GameState.Map.GetAreaSorted(tile.coordinates, 2, true, true);
+                Il2CppReferenceArray<TileData> areaSorted = GameManager.GameState.Map.GetTileNeighborsSorted(tile.coordinates);
                 if (areaSorted != null)
                 {
                     for (int i = areaSorted.Count - 1; i >= 0; i--)

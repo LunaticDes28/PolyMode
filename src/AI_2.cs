@@ -1,9 +1,6 @@
 using HarmonyLib;
 using Polytopia.Data;
-using PolytopiaBackendBase;
 using PolytopiaBackendBase.Game;
-using System;
-using System.Collections.Generic;
 
 namespace PolyMode
 {
@@ -144,7 +141,7 @@ namespace PolyMode
                 || !gameState.GameLogicData.TryGetData(playerState.tribe, out TribeData _))
                 return;
 
-            var random = new System.Random();
+            var random = new Random();
 
             if (tile.improvement.level == 2)
             {
@@ -169,9 +166,19 @@ namespace PolyMode
             else if (tile.improvement.level == 3)
             {
                 int roll = random.Next(0, 3);
-                if (roll == 0) __result = CityReward.CityWall;
-                else if (roll == 1) __result = CityReward.Resources;
-                else __result = EnumCache<CityReward>.GetType("valhalla");
+                if (roll == 0) 
+                {
+                    __result = CityReward.CityWall;
+                }
+                else
+                if (roll == 1) 
+                {
+                    __result = CityReward.Resources;
+                }
+                else 
+                {
+                    __result = EnumCache<CityReward>.GetType("valhalla");
+                }
             }
             else if (tile.improvement.level == 4)
             {
@@ -179,13 +186,21 @@ namespace PolyMode
                     gameState.Map, gameState, tile, 8, playerState);
 
                 if (centerResult != null && centerResult.EnemyCityCount == 0 && playerState.cities >= 4)
+                {   
                     __result = EnumCache<CityReward>.GetType("taxreform");
-                else if (centerResult != null && centerResult.OwnedCityCount >= 5)
-                    __result = EnumCache<CityReward>.GetType("taxreform");
+                }
                 else
-                    __result = random.Next(0, 1) == 0
+                if (centerResult != null && centerResult.OwnedCityCount >= 5)
+                {
+                    __result = EnumCache<CityReward>.GetType("taxreform");
+                }
+                else
+                {  
+                    /*__result = random.Next(0, 1) == 0
                         ? CityReward.BorderGrowth
-                        : CityReward.PopulationGrowth;
+                        : CityReward.PopulationGrowth;*/
+                    __result = CityReward.BorderGrowth;
+                }
             }
             else if (tile.improvement.level >= 5)
             {
@@ -202,47 +217,48 @@ namespace PolyMode
             PlayerState player,
             ref float __result)
         {
-            if (gameState == null || tileData == null || player == null) return;
+            if (gameState == null || tileData == null || player == null || improvementData == null)
+                return;
 
-            if (improvementData.type != EnumCache<ImprovementData.Type>.GetType("citadel")
-                && !gameState.GameLogicData.IsUnlocked(improvementData.type, player))
+            if (improvementData.type != EnumCache<ImprovementData.Type>.GetType("citadel"))
                 return;
 
             try
             {
-                float score = 0f;
                 TileData rulingCity = gameState.Map.GetTile(tileData.rulingCityCoordinates);
-                if (rulingCity == null || rulingCity.improvement == null) return;
+                if (rulingCity?.improvement == null)
+                    return;
 
-                GetCitadelCache(gameState, player);
+                float score;
 
-                if (cityCitadelCornerCache.TryGetValue(rulingCity.coordinates, out TileData? targetedCorner)
-                    && targetedCorner != null
-                    && tileData.coordinates.X == targetedCorner.coordinates.X
-                    && tileData.coordinates.Y == targetedCorner.coordinates.Y)
+                // 1) Isolated land in water/ocean always prioritize
+                if (MapAnalysis.IsIsolatedLandInWater(gameState, tileData))
                 {
-                    int expansionRadius = rulingCity.improvement.borderSize;
-                    TileData[] nearbyTiles = gameState.Map.GetAreaSorted(
-                        new WorldCoordinates(tileData.coordinates.X, tileData.coordinates.Y),
-                        expansionRadius, true, true);
+                    int expansionRadius = Math.Max(1, (int)rulingCity.improvement.borderSize);
+                    int unclaimedCount = CountUnclaimedInRadius(gameState, tileData.coordinates, expansionRadius);
 
-                    int unclaimedCount = 0;
-                    if (nearbyTiles != null)
-                    {
-                        foreach (var nearbyTile in nearbyTiles)
-                        {
-                            if (nearbyTile != null && nearbyTile.owner == 0)
-                                unclaimedCount++;
-                        }
-                    }
-
-                    score += unclaimedCount * 80f;
-                    if (rulingCity.improvement.borderSize == 2)
-                        score *= 0.5f;
+                    score = 1000f + unclaimedCount * 80f;
                 }
                 else
                 {
-                    score *= 0.1f;
+                    // 2) Normal path pick the best corner from cache
+                    GetCitadelCache(gameState, player);
+
+                    if (cityCitadelCornerCache.TryGetValue(rulingCity.coordinates, out TileData? targetedCorner)
+                        && targetedCorner != null
+                        && tileData.coordinates.X == targetedCorner.coordinates.X
+                        && tileData.coordinates.Y == targetedCorner.coordinates.Y)
+                    {
+                        int expansionRadius = rulingCity.improvement.borderSize;
+                        int unclaimedCount = CountUnclaimedInRadius(gameState, tileData.coordinates, expansionRadius);
+                        score = unclaimedCount * 80f;
+                        if (rulingCity.improvement.borderSize == 2)
+                            score *= 0.5f;
+                    }
+                    else
+                    {
+                        score = 0.1f; // non-corner, non-island
+                    }
                 }
 
                 score *= AI.getPriceFactor(improvementData.cost, player);
@@ -251,6 +267,126 @@ namespace PolyMode
             catch (Exception ex)
             {
                 Loader.modLogger?.LogError($"[Conquest-AI] GetImprovementScore: {ex}");
+            }
+        }
+
+        public static int CountUnclaimedInRadius(
+            GameState gameState,
+            WorldCoordinates center,
+            int radius)
+        {
+            TileData[] nearby = gameState.Map.GetAreaSorted(center, radius, true, true);
+            if (nearby == null)
+                return 0;
+
+            int unclaimed = 0;
+            for (int i = 0; i < nearby.Length; i++)
+            {
+                if (nearby[i] != null && nearby[i].owner == 0)
+                    unclaimed++;
+            }
+            return unclaimed;
+        }
+
+        [HarmonyPrefix]
+        [HarmonyPatch(typeof(AI), nameof(AI.CheckForTechNeeds))]
+        private static bool CheckForTechNeeds_WaterBias(
+            GameState gameState,
+            PlayerState player,
+            // match vanilla signature — drop/adjust if your dump differs
+            Il2CppSystem.Collections.Generic.List<TileData> playerEmpire,
+            Il2CppSystem.Collections.Generic.Dictionary<TechData.Type, int> neededTech)
+        {
+            try
+            {
+                if (gameState?.Settings == null || player == null || neededTech == null)
+                    return true; // vanilla
+
+                if (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                    && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                    return true;
+
+                neededTech.Clear();
+
+                int fieldForestCount = 0;
+                int disconnectedCities = 0;
+                var random = new System.Random();
+
+                for (int i = 0; i < gameState.Map.Tiles.Length; i++)
+                {
+                    TileData tile = gameState.Map.Tiles[i];
+                    if (tile == null || !tile.GetExplored(player.Id))
+                        continue;
+
+                    if (tile.owner == player.Id)
+                    {
+                        if (tile.HasImprovement(ImprovementData.Type.City) && !tile.IsConnected)
+                            disconnectedCities++;
+
+                        if (tile.terrain == TerrainData.Type.Field
+                            || tile.terrain == TerrainData.Type.Forest)
+                            fieldForestCount++;
+                    }
+
+                    // Terrain the player cannot access yet → tech need
+                    if (!tile.CanBeAccessedByPlayer(gameState, player))
+                    {
+                        TechData unlockTech = gameState.GameLogicData.GetTechThatUnlocks(tile.terrain);
+                        if (unlockTech != null)
+                        {
+                            // Water: much lower pressure (still occasional nudge)
+                            int weight;
+                            if (tile.IsWater)
+                                weight = random.Next(0, 25) == 0 ? 1 : 0;
+                            else
+                                weight = 1;
+
+                            if (weight > 0)
+                                AI.AddTechNeed(neededTech, unlockTech.type, weight);
+                        }
+                    }
+
+                    // Visible resource → freelance improvement tech
+                    if (tile.resource != null
+                        && gameState.GameLogicData.IsResourceVisibleToPlayer(
+                            tile.resource.type, player, gameState))
+                    {
+                        var improvements = gameState.GameLogicData.GetImprovementForResource(
+                            tile.resource.type);
+                        if (improvements == null)
+                            continue;
+
+                        for (int j = 0; j < improvements.Count; j++)
+                        {
+                            ImprovementData imp = improvements[j];
+                            if (imp == null)
+                                continue;
+                            if (!imp.HasAbility(ImprovementAbility.Type.Freelance))
+                                continue;
+                            if (gameState.GameLogicData.IsUnlocked(imp.type, player))
+                                continue;
+
+                            TribeData tribeData = gameState.GameLogicData.GetTribeData(player.tribe);
+                            TechData tech = gameState.GameLogicData.GetTechThatUnlocks(imp, tribeData);
+                            if (tech != null)
+                                AI.AddTechNeed(neededTech, tech.type, 5);
+                        }
+                    }
+                }
+
+                // Roads when you have land tiles and disconnected cities
+                if (fieldForestCount > 0)
+                {
+                    int roadsNeed = fieldForestCount * (1 + disconnectedCities);
+                    AI.AddTechNeed(neededTech, TechData.Type.Roads, roadsNeed);
+                }
+
+                return false; // skip vanilla
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest-AI] CheckForTechNeeds: {ex}");
+                return true;
             }
         }
 
@@ -272,7 +408,7 @@ namespace PolyMode
                     return;
 
                 if (__result == null) return;
-                if (player.Currency < 30 || player.currency < (ResourceDataUtils.CalculateIncomeFor(gameState, player.Id) * 1.25 + 5) || gameState.CurrentTurn < 25) return;
+                if (player.currency < 30 || player.currency < (ResourceDataUtils.CalculateIncomeFor(gameState, player.Id) * 1.25 + 5) || gameState.CurrentTurn < 25) return;
                 if (gameState.CurrentTurn % 2 != 0) return;
 
                 var empireTiles = player.aiState?.PlayerMapData?.empireTiles;
@@ -332,19 +468,29 @@ namespace PolyMode
                         if (currentData.type == citadelType)
                         {
                             TileData capital = gameState.Map.GetTile(tileData.rulingCityCoordinates);
+                            if (capital?.improvement == null)
+                                continue;
+
                             int citadelCount = Main.CountCityCitadel(gameState, tileData);
                             if (Main.CityHasMaxCitadel(gameState, tileData, player, citadelCount))
                                 continue;
 
-                            if (!cityCitadelCornerCache.TryGetValue(tileData.rulingCityCoordinates, out TileData? corner)
-                                || corner == null
-                                || tileData.coordinates.X != corner.coordinates.X
-                                || tileData.coordinates.Y != corner.coordinates.Y)
+                            bool isolatedIsland = MapAnalysis.IsIsolatedLandInWater(gameState, tileData);
+
+                            bool isBestCorner =
+                                cityCitadelCornerCache.TryGetValue(tileData.rulingCityCoordinates, out TileData? corner)
+                                && corner != null
+                                && tileData.coordinates.X == corner.coordinates.X
+                                && tileData.coordinates.Y == corner.coordinates.Y;
+
+                            // Only citadel on best corner OR isolated land in water
+                            if (!isolatedIsland && !isBestCorner)
                                 continue;
 
+                            int border = Math.Max(1, (int)capital.improvement.borderSize);
                             int unclaimed = 0;
                             TileData[] nearby = MapDataExtensions.GetAreaSorted(
-                                gameState.Map, tileData.coordinates, capital.improvement.borderSize, true, true);
+                                gameState.Map, tileData.coordinates, border, true, true);
                             if (nearby != null)
                             {
                                 for (int i = 0; i < nearby.Length; i++)
@@ -354,7 +500,14 @@ namespace PolyMode
                                 }
                             }
 
-                            newScore = (float)(unclaimed * 75 / Math.Pow(capital.improvement.borderSize, 1.5));
+                            if (isolatedIsland)
+                            {
+                                newScore = 1000f + unclaimed * 75f;
+                            }
+                            else
+                            {
+                                newScore = (float)(unclaimed * 75 / Math.Pow(border, 1.5));
+                            }
                         }
 
                         if ((newScore > 0f && currentData.rewards.GetPopulation() > 0)

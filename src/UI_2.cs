@@ -1,7 +1,7 @@
 using HarmonyLib;
 using PolytopiaBackendBase.Game;
 using UnityEngine;
-using UnityEngine.EventSystems;
+using UnityEngine.UI;
 using Polytopia.Data;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 
@@ -172,22 +172,65 @@ namespace PolyMode
                     return true;
                 }
 
-                if (mapSize <= 16) // Tiny (11) & Small (14) & Normal (16)
+                if (mapPreset == (MapPreset)5)
                 {
-                    __result = 3;
-                    Loader.modLogger?.LogInfo($"[Conquest-Backend] MapSize {mapSize} (Tiny/Small) detected. Limit set to {__result}.");
-                    return false; 
+                    if (mapSize <= 16)
+                    {
+                        __result = 1;
+                    }
+                    else
+                    if (mapSize <= 18)
+                    {
+                        __result = 2;
+                    }
+                    else
+                    if (mapSize <= 20)
+                    {
+                        __result = 3;
+                    }
+                    else
+                    {
+                        // Massive (30) 
+                        __result = 7;
+                    }
                 }
-                if (mapSize <= 20) // Large (18) & Huge (20)
+                else
+                if (mapPreset == (MapPreset)6)
                 {
-                    __result = 5;
-                    Loader.modLogger?.LogInfo($"[Conquest-Backend] MapSize {mapSize} (Normal/Large) detected. Limit set to {__result}.");
-                    return false;
+                    if (mapSize <= 20) // All except Massive (30)
+                    {
+                        __result = 3;
+                    }
+                    else
+                    {
+                        // Massive (30) 
+                        __result = 7;
+                    }
+                }
+                else
+                {
+                    if (mapSize <= 16) // Tiny (11) & Small (14) & Normal (16)
+                    {
+                        __result = 3;
+                    }
+                    else
+                    if (mapSize <= 18) // Large (18)
+                    {
+                        __result = 4;
+                    }
+                    else
+                    if (mapSize <= 20) // Huge (20)
+                    {
+                        __result = 5;
+                    }
+                    else
+                    {
+                        // Massive (30) 
+                        __result = 7;
+                    }
                 }
 
-                // Massive (30) 
-                __result = 7;
-                Loader.modLogger?.LogInfo($"[Conquest-Backend] MapSize {mapSize} (Huge/Massive) detected. Limit set to {__result}.");
+                Loader.modLogger?.LogInfo($"[Conquest-Backend] MapSize {mapSize} set. MapType {mapPreset} detected. Limit set to {__result}.");
                 return false;
 
             }
@@ -356,17 +399,25 @@ namespace PolyMode
                         {
                             row.iconContainerPlayerInfoIcon.gameObject.SetActive(true);
                             row.iconContainerPlayerInfoIcon.SetData(player, GameManager.LocalPlayer);
-                            //row.iconContainerAvatar.gameObject.SetActive(true);
-                            //row.iconContainerImageOneRow.gameObject.SetActive(true);
-                            //row.iconContainerImageTwoRows.gameObject.SetActive(true);
-                            //StatsRow_Obsolete row2 = new StatsRow_Obsolete();
-                            //row2.SetActive(true);
-                            //row2.SetPlayerInfo(player, GameManager.LocalPlayer);
+
+                            Image head = row.iconContainerPlayerInfoIcon.HeadImage;
+                            if (head != null)
+                            {
+                                head.preserveAspect = true;
+                                RectTransform headRt = head.rectTransform;
+                                headRt.anchorMin = Vector2.zero;
+                                headRt.anchorMax = Vector2.one;
+                                headRt.pivot = new Vector2(0.5f, 0.5f);
+                                headRt.anchoredPosition = Vector2.zero;
+                                headRt.sizeDelta = Vector2.zero;
+                            }
+
                             row.OnClickedSignal.Add((System.Action)(() => {
                                 PlayerInfoPopup playerInfoPopup = PopupManager.GetPlayerInfoPopup();
                                 playerInfoPopup.SetData(player);
                                 playerInfoPopup.Show(InputManager.GetInputPosition());
                             }));
+
                             row.SetShowIconType(StatsRowView.IconType.PlayerInfo);
                             row.SetPlayerInfoIconLayout(layoutInfo);
                             statsName = player.GetLocalizedTribeName(GameManager.GameState);
