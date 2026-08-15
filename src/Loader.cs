@@ -13,7 +13,6 @@ namespace PolyMode
     {
         public static int opinionAutoidx = Enum.GetValues(typeof(OpinionManager.Type)).Length;
         
-        
         public static ManualLogSource? modLogger;
 
         public static void Load(ManualLogSource logger)

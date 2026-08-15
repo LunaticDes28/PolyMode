@@ -1,5 +1,6 @@
 using HarmonyLib;
 using PolytopiaBackendBase.Game;
+using PolytopiaBackendBase.Common;
 using Polytopia.Data;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using UnityEngine.EventSystems;
@@ -1454,7 +1455,7 @@ namespace PolyMode
         [HarmonyPatch(typeof(PathFinder), nameof(PathFinder.IsTileAccessible))]
         private static void IsTileAccessible_Deny(TileData tile, TileData origin, PathFinderSettings settings, ref bool __result)
         {
-            if (origin.unit != null)
+            if (origin.unit != null && tile.improvement != null)
             {
 
                 if (UnitDataExtensions.HasAbility(origin.unit, UnitAbility.Type.Hide) || origin.unit.type == UnitData.Type.Dagger || origin.unit.type == UnitData.Type.Giant)
@@ -1622,7 +1623,7 @@ namespace PolyMode
         {
             TileData cityTile = gameState.Map.GetTile(defendingUnit.coordinates);
 
-            if (attackingUnit.type == EnumCache<UnitData.Type>.GetType("citadelrammership") && cityTile.improvement.type == ImprovementData.Type.City)
+            if (attackingUnit.type == EnumCache<UnitData.Type>.GetType("citadelrammership") && cityTile.improvement != null && cityTile.improvement.type == ImprovementData.Type.City)
             {
                 __result.shouldMoveToDefeatedEnemyTile = false;
             }

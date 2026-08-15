@@ -229,11 +229,9 @@ namespace PolyMode
                     if(!tile.GetExplored(player.Id)) continue;
 
                     UnitState enemy = tile.unit;
-                    if (enemy.owner == player.Id || enemy.owner == 0)
-                        continue;
+                    if (enemy.owner == player.Id || enemy.owner == 0) continue;
 
-                    if (++enemyCount > maxEnemies)
-                        break;
+                    if (++enemyCount > maxEnemies) break;
 
                     int moveRange = Math.Max(0, UnitDataExtensions.GetMovement(enemy, gameState));
                     int attackRange = Math.Max(0, UnitDataExtensions.GetRange(enemy.UnitData));
@@ -255,7 +253,9 @@ namespace PolyMode
                                     danger.Add(destination); // tile they can walk onto
 
                                     if (hasDash)
+                                    {
                                         origins.Add(destination);
+                                    }
                                 }
                             }
                         }
@@ -268,7 +268,9 @@ namespace PolyMode
                     // Threat zone around each origin (empty tiles included)
                     int paintRange = attackRange > 0 ? attackRange : 1;
                     for (int o = 0; o < origins.Count; o++)
+                    {
                         PaintRange(gameState, origins[o], paintRange, danger);
+                    }
                 }
             }
             finally
@@ -285,14 +287,15 @@ namespace PolyMode
             int range,
             HashSet<WorldCoordinates> danger)
         {
-            TileData[] area = MapDataExtensions.GetAreaSorted(
-                gameState.Map, origin, range, true, true);
+            TileData[] area = MapDataExtensions.GetAreaSorted(gameState.Map, origin, range, true, true);
             if (area == null) return;
 
             for (int i = 0; i < area.Length; i++)
             {
                 if (area[i] != null)
+                {
                     danger.Add(area[i].coordinates);
+                }
             }
         }
 

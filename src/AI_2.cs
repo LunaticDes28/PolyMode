@@ -581,37 +581,33 @@ namespace PolyMode
             UnitState unit,
             ref Il2CppSystem.Collections.Generic.List<WorldCoordinates> __result)
         {
-            if (skipMoveOptionsPatch)
-                return;
+            if (skipMoveOptionsPatch) return;
 
             try
             {
-                if (gameState?.Settings == null || unit == null || __result == null)
-                    return;
+                if (gameState?.Settings == null || unit == null || __result == null) return;
 
                 var mode = gameState.Settings.RulesGameMode;
-                if (mode != EnumCache<GameMode>.GetType("conquest")
-                    && mode != EnumCache<GameMode>.GetType("reign"))
-                    return;
+                if (mode != EnumCache<GameMode>.GetType("conquest") && mode != EnumCache<GameMode>.GetType("reign")) return;
 
-                if (!gameState.TryGetPlayer(unit.owner, out PlayerState player) || !player.AutoPlay)
-                    return;
+                if (!gameState.TryGetPlayer(unit.owner, out PlayerState player) || !player.AutoPlay) return;
 
-                if (!unit.UnitData.HasAbility(UnitAbility.Type.Stiff)
-                    || unit.type == UnitData.Type.Juggernaut
-                    || unit.HasAbility(UnitAbility.Type.Infiltrate))
-                    return;
+                if (!unit.UnitData.HasAbility(UnitAbility.Type.Stiff) || unit.type == UnitData.Type.Juggernaut || unit.HasAbility(UnitAbility.Type.Infiltrate)) return;
 
                 HashSet<WorldCoordinates> danger = GetDangerousTilesCached(gameState, player);
 
                 for (int i = __result.Count - 1; i >= 0; i--)
                 {
                     if (danger.Contains(__result[i]))
+                    {
                         __result.RemoveAt(i);
+                    }
                 }
 
                 if (__result.Count == 0)
+                {
                     __result.Add(start);
+                }
             }
             catch (Exception ex)
             {
@@ -638,7 +634,7 @@ namespace PolyMode
             citadelCacheTurn = (int)gameState.CurrentTurn;
         }
 
-         private static HashSet<WorldCoordinates> GetDangerousTilesCached(
+        private static HashSet<WorldCoordinates> GetDangerousTilesCached(
             GameState gameState, PlayerState player)
         {
             if (dangerousCacheTurn != gameState.CurrentTurn)
