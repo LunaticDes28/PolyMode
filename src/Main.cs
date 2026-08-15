@@ -891,6 +891,12 @@ namespace PolyMode
                 return;
             }
 
+            if (tile.unit != null && tile.unit.owner != playerState.Id)
+            {
+                __result = false;
+                return;   
+            }
+
 			if (improvement.HasAbility(ImprovementAbility.Type.Limited) && __instance.HasImprovementWithinCityBorders(gameState.Map, tile.rulingCityCoordinates, improvement.type))
 			{
                 __result = false;
@@ -1451,68 +1457,6 @@ namespace PolyMode
         // =========================================================================
         // F. Citadel Logics (water)
         // =========================================================================
-        [HarmonyPostfix]
-        [HarmonyPatch(typeof(PathFinder), nameof(PathFinder.IsTileAccessible))]
-        private static void IsTileAccessible_Deny(TileData tile, TileData origin, PathFinderSettings settings, ref bool __result)
-        {
-            if (origin.unit != null && tile.improvement != null)
-            {
-
-                if (UnitDataExtensions.HasAbility(origin.unit, UnitAbility.Type.Hide) || origin.unit.type == UnitData.Type.Dagger || origin.unit.type == UnitData.Type.Giant)
-                {
-                    if (tile.terrain.IsWater() && tile.improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel"))
-                    {
-                        __result = false;
-                    }
-                }
-            }
-        }
-        
-        /*[HarmonyPrefix]
-        [HarmonyPriority(Priority.Last)]
-        [HarmonyPatch(typeof(EmbarkAction), nameof(EmbarkAction.ExecuteDefault))]
-        private static bool ExecuteDefault_WaterCitadel(EmbarkAction __instance, GameState gameState)
-        {
-            try
-            {
-                Loader.modLogger?.LogInfo("[Conquest-Citadel] Embarking on rammer 1...");
-
-                PlayerState playerState;
-                if (gameState.TryGetPlayer(__instance.PlayerId, out playerState))
-                {
-                    TileData tile = gameState.Map.GetTile(__instance.Coordinates);
-                    UnitState unit = tile.unit;
-                    UnitData.Type type = UnitData.Type.Rammership;
-
-                    if (tile.improvement.type != EnumCache<ImprovementData.Type>.GetType("citadel")) return true;
-                    Loader.modLogger?.LogInfo("[Conquest-Citadel] Embarking on rammer 2...");
-
-                    UnitData unitData;
-                    gameState.GameLogicData.TryGetData(type, out unitData);
-                    UnitState unitState = ActionUtils.TrainUnit(gameState, playerState, tile, unitData);
-                    if (!UnitDataExtensions.HasAbility(unitState, UnitAbility.Type.Protect))
-                    {
-                        unitState.health = unit.health;
-                    }
-                    unitState.home = unit.home;
-                    unitState.direction = unit.direction;
-                    unitState.flipped = unit.flipped;
-                    unitState.passengerUnit = unit;
-                    unitState.effects = unit.effects;
-                    unitState.attacked = true;
-                    unitState.moved = true;
-
-                    gameState.ActionStack.Add(new UpgradeAction(__instance.PlayerId, type, tile.coordinates, 0));
-                }
-                return false;
-            }
-            catch (Exception ex)
-            {
-                Loader.modLogger?.LogError($"[Conquest] Error in EmbarkAction Postfix: {ex}");
-                return true;
-            }            
-        }*/
-
         /*[HarmonyPrefix]
         [HarmonyPriority(Priority.First)]
         [HarmonyPatch(typeof(ActionUtils), nameof(ActionUtils.TrainUnit))]
@@ -1531,9 +1475,26 @@ namespace PolyMode
             return true;
         }*/
 
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(PathFinder), nameof(PathFinder.IsTileAccessible))]
+        private static void IsTileAccessible_DenyUnusualUnits(TileData tile, TileData origin, PathFinderSettings settings, ref bool __result)
+        {
+            if (origin.unit != null && tile.improvement != null)
+            {
+
+                if (UnitDataExtensions.HasAbility(origin.unit, UnitAbility.Type.Hide) || origin.unit.type == UnitData.Type.Dagger || origin.unit.type == UnitData.Type.Giant)
+                {
+                    if (tile.terrain.IsWater() && tile.improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel"))
+                    {
+                        __result = false;
+                    }
+                }
+            }
+        }
+
         [HarmonyPrefix]
         [HarmonyPatch(typeof(MoveAction), nameof(MoveAction.ExecuteDefault))]
-        private static bool MoveAction_WaterCitadel(MoveAction __instance, GameState gameState)
+        private static bool MoveAction_WaterCitadelEmbark(MoveAction __instance, GameState gameState)
         {
 			WorldCoordinates worldCoordinates = __instance.Path[0];
 			WorldCoordinates worldCoordinates2 = __instance.Path[__instance.Path.Count - 1];
@@ -1619,7 +1580,7 @@ namespace PolyMode
 
         [HarmonyPostfix]
         [HarmonyPatch(typeof(BattleHelpers), nameof(BattleHelpers.GetBattleResults))]
-        private static void GetBattleResults_DenyMoveIntoCity(GameState gameState, UnitState attackingUnit, UnitState defendingUnit, ref BattleResults __result)
+        private static void GetBattleResults_CitadelRammership(GameState gameState, UnitState attackingUnit, UnitState defendingUnit, ref BattleResults __result)
         {
             TileData cityTile = gameState.Map.GetTile(defendingUnit.coordinates);
 

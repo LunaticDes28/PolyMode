@@ -208,12 +208,13 @@ namespace PolyMode
         /// <param name="player"></param>
         /// <returns></returns>
 
-        public static HashSet<WorldCoordinates> BuildDangerSetFromOptions(
-            GameState gameState, PlayerState player)
+        public static HashSet<WorldCoordinates> BuildDangerSetFromOptions(GameState gameState, PlayerState player)
         {
             var danger = new HashSet<WorldCoordinates>();
             if (gameState?.Map?.Tiles == null || player == null)
+            {
                 return danger;
+            }
 
             const int maxEnemies = 1000;
             int enemyCount = 0;

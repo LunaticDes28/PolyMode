@@ -644,7 +644,9 @@ namespace PolyMode
             }
 
             if (dangerousTilesCache.TryGetValue(player.Id, out HashSet<WorldCoordinates>? cached))
+            {
                 return cached;
+            }
 
             HashSet<WorldCoordinates> set = MapAnalysis.BuildDangerSetFromOptions(gameState, player);
             dangerousTilesCache[player.Id] = set;
