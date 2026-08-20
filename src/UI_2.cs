@@ -287,43 +287,148 @@ namespace PolyMode
 
         [HarmonyPostfix]
         [HarmonyPatch(typeof(GameStatsScreen), nameof(GameStatsScreen.GetDescription))]
-        public static void GetDescription_Reign(GameStatsScreen __instance, PlayerState player, int cityCount, string userName, ref string __result)
+        public static void GetDescription_Reign(
+            GameStatsScreen __instance,
+            PlayerState player,
+            int cityCount,
+            string userName,
+            ref string __result)
         {
             try
             {
-                if (__instance.GameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                if (__instance == null)
+                    return;
+
+                // Settings / mode
+                GameSettings? settings = null;
+                try { settings = __instance.GameSettings; } catch { }
+                if (settings == null)
+                    return;
+
+                if (settings.RulesGameMode != EnumCache<GameMode>.GetType("reign")
+                    && settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest"))
+                    return;
+
+                if (player == null)
                 {
+                    __result = string.IsNullOrEmpty(userName) ? "Player" : userName;
                     return;
                 }
 
-                bool isSpectating = GameManager.Client.IsSpectating;
-                bool flag = player == GameManager.LocalPlayer && !isSpectating;
-                bool autoPlay = player.AutoPlay;
-                bool flag2 = player.IsAlive(GameManager.GameState);
-                bool flag3 = flag || GameManager.LocalPlayer.KnowsPlayer(player.Id) || !flag2 || (isSpectating && GameManager.LocalPlayer.Id == player.Id) || !autoPlay;
-                string arg = string.Empty;
+                GameState gameState = GameManager.GameState;
+                PlayerState? localPlayer = null;
+                try { localPlayer = GameManager.LocalPlayer; } catch { }
 
-                if (flag3)
+                bool isSpectating = false;
+                try
                 {
-                    arg = Localization.Get("gamestatus.ruled", new Il2CppReferenceArray<Il2CppSystem.Object>(new[] { (Il2CppSystem.Object)userName }));
+                    if (GameManager.Client != null)
+                        isSpectating = GameManager.Client.IsSpectating;
                 }
-                else
+                catch { }
+
+                bool isLocalHuman = localPlayer != null
+                    && player == localPlayer
+                    && !isSpectating;
+
+                bool autoPlay = false;
+                try { autoPlay = player.AutoPlay; } catch { }
+
+                bool isAlive = true;
+                try
                 {
-                    arg = Localization.Get("gamestatus.unknown.ruler", new Il2CppReferenceArray<Il2CppSystem.Object>(0));
+                    if (gameState != null)
+                        isAlive = player.IsAlive(gameState);
                 }
-                if (!flag2)
+                catch { isAlive = true; }
+
+                bool knowsPlayer = false;
+                try
                 {
-                    __result = string.Format("{0}", arg);
+                    if (localPlayer != null)
+                        knowsPlayer = localPlayer.KnowsPlayer(player.Id);
                 }
-                __result = string.Format("{0}, {1}", arg, Localization.Get("gamestatus.score", (Il2CppReferenceArray<Il2CppSystem.Object>)(new[]
+                catch { }
+
+                bool showName =
+                    isLocalHuman
+                    || knowsPlayer
+                    || !isAlive
+                    || (isSpectating && localPlayer != null && localPlayer.Id == player.Id)
+                    || !autoPlay;
+
+                string safeName = string.IsNullOrEmpty(userName)
+                    ? ("Player " + player.Id)
+                    : userName;
+
+                string arg;
+                try
+                {
+                    if (showName)
                     {
-                        (Il2CppSystem.Object)LocalizationUtils.FormatNumber(player.score)
-                    })));
+                        arg = Localization.Get(
+                            "gamestatus.ruled",
+                            new Il2CppReferenceArray<Il2CppSystem.Object>(new Il2CppSystem.Object[]
+                            {
+                                (Il2CppSystem.Object)(Il2CppSystem.String)safeName
+                            }));
+                    }
+                    else
+                    {
+                        arg = Localization.Get(
+                            "gamestatus.unknown.ruler",
+                            new Il2CppReferenceArray<Il2CppSystem.Object>(0));
+                    }
                 }
+                catch
+                {
+                    arg = showName ? safeName : "???";
+                }
+
+                if (string.IsNullOrEmpty(arg))
+                    arg = showName ? safeName : "???";
+
+                // Dead: name/unknown only
+                if (!isAlive)
+                {
+                    __result = arg;
+                    return;
+                }
+
+                // Alive: name + score
+                string scorePart;
+                try
+                {
+                    string scoreStr = LocalizationUtils.FormatNumber(player.score);
+                    scorePart = Localization.Get(
+                        "gamestatus.score",
+                        new Il2CppReferenceArray<Il2CppSystem.Object>(new Il2CppSystem.Object[]
+                        {
+                            (Il2CppSystem.Object)(Il2CppSystem.String)scoreStr
+                        }));
+                }
+                catch
+                {
+                    scorePart = player.score.ToString();
+                }
+
+                if (string.IsNullOrEmpty(scorePart))
+                    scorePart = player.score.ToString();
+
+                __result = string.Format("{0}, {1}", arg, scorePart);
+            }
             catch (Exception ex)
             {
                 Loader.modLogger?.LogError($"[Conquest-Backend] GameStatsScreen GetDescription error: {ex}");
-            } 
+                try
+                {
+                    __result = string.IsNullOrEmpty(userName) ? "Player" : userName;
+                }
+                catch
+                {
+                    __result = "Player";
+                }
+            }
         }
 
         [HarmonyPrefix]

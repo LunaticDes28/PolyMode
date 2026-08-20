@@ -387,6 +387,117 @@ namespace PolyMode
             }
         }
 
+        /*[HarmonyPostfix]
+        [HarmonyPatch(typeof(AI), nameof(AI.AddPossibleRoadBuildingCommands))]
+        private static void AddPossibleRoadBuildingCommands_Citadels(
+            GameState gameState,
+            PlayerState player,
+            Il2CppSystem.Collections.Generic.List<TileData> cityTiles,
+            Il2CppSystem.Collections.Generic.List<AI.ScoredCommand> possibleCommands)
+        {
+            try
+            {
+                if (gameState?.Map == null || player == null || possibleCommands == null) return;
+
+                // Empire tiles only
+                Il2CppSystem.Collections.Generic.List<TileData>? empireTiles = null;
+                try
+                {
+                    if (player.aiState != null)
+                    {
+                        empireTiles = player.aiState.PlayerMapData.empireTiles;
+                    }
+                }
+                catch { }
+
+                if (empireTiles == null || empireTiles.Count == 0) return;
+
+                // Owned citadels inside empire
+                var citadels = new List<TileData>();
+                for (int i = 0; i < empireTiles.Count; i++)
+                {
+                    TileData tile = empireTiles[i];
+                    if (tile?.owner != player.Id || tile.improvement == null) continue;
+
+                    try
+                    {
+                        if (tile.improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel"))
+                        {
+                            citadels.Add(tile);
+                        }
+                    }
+                    catch { }
+                }
+
+                if (citadels.Count == 0) return;
+
+                TerrainData forest;
+                TerrainData field;
+                gameState.GameLogicData.TryGetData(TerrainData.Type.Forest, out forest);
+                gameState.GameLogicData.TryGetData(TerrainData.Type.Field, out field);
+
+                var terrains = new Il2CppSystem.Collections.Generic.List<TerrainData>();
+                if (forest != null) terrains.Add(forest);
+                if (field != null) terrains.Add(field);
+
+                PathFinderSettings settings = PathFinderSettings.CreateDefault(player, terrains, gameState.Version, gameState);
+
+                for (int i = 0; i < cityTiles.Count; i++)
+                {
+                    TileData city = cityTiles[i];
+                    if (city == null) continue;
+
+                    Il2CppSystem.Collections.Generic.List<WorldCoordinates>? bestRoute = null;
+                    int bestLen = int.MaxValue;
+
+                    for (int c = 0; c < citadels.Count; c++)
+                    {
+                        TileData citadel = citadels[c];
+                        Il2CppSystem.Collections.Generic.List<WorldCoordinates> route = AI.GetRoute(gameState, city, citadel, settings);
+                        if (route == null || route.Count == 0) continue;
+
+                        for (int j = 0; j < route.Count; j++)
+                        {
+                            TileData routeTile = gameState.Map.GetTile(route[j]);
+                            if (routeTile != null && routeTile.HasRoad)
+                            {
+                                route.RemoveAt(j--);
+                            }
+                        }
+
+                        if (route.Count == 0) continue;
+
+                        if (route.Count < bestLen)
+                        {
+                            bestLen = route.Count;
+                            bestRoute = route;
+                        }
+                    }
+
+                    if (bestRoute == null) continue;
+
+                    float score = (float)gameState.GetCityPotential(city, player) / (float)Math.Max(1, bestRoute.Count);
+                    score *= (float)0.5;
+
+                    for (int k = 0; k < bestRoute.Count; k++)
+                    {
+                        TileData tile = gameState.Map.GetTile(bestRoute[k]);
+                        if (tile == null) continue;
+
+                        possibleCommands.Add(new AI.ScoredCommand
+                        {
+                            command = new BuildCommand(player.Id,ImprovementData.Type.Road, tile.coordinates),
+                            score = score
+                        });
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogWarning($"[Conquest-AI] AddPossibleRoadBuildingCommands: {ex.Message}");
+            }
+        }*/
+
         // =========================================================================
         // C. Destroy
         // =========================================================================
