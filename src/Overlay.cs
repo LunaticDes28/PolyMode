@@ -12,13 +12,54 @@ namespace PolyMode
 {
     public class CitadelOverlay : MonoBehaviour
     {
-        public CitadelOverlay(IntPtr handle) : base(handle) { }
+        /*private static void ProbeFogSort()
+        {
+            if (fogProbeDone) return;
+            fogProbeDone = true;
 
+            try
+            {
+                var renderers = UnityEngine.Object.FindObjectsOfType<SpriteRenderer>();
+                SpriteRenderer? best = null;
+                int bestOrder = int.MinValue;
+
+                foreach (var sr in renderers)
+                {
+                    if (sr == null) continue;
+                    string n = sr.gameObject.name ?? "";
+                    string layer = sr.sortingLayerName ?? "";
+                    // adjust names if logs show something else
+                    if (n.IndexOf("fog", StringComparison.OrdinalIgnoreCase) < 0
+                        && layer.IndexOf("fog", StringComparison.OrdinalIgnoreCase) < 0)
+                        continue;
+
+                    if (sr.sortingOrder >= bestOrder)
+                    {
+                        bestOrder = sr.sortingOrder;
+                        best = sr;
+                    }
+                }
+
+                if (best != null)
+                {
+                    fogLayerName = best.sortingLayerName;
+                    fogLayerId = best.sortingLayerID;
+                    fogOrder = best.sortingOrder;
+                    // Loader.modLogger?.LogInfo($"[Citadel] Fog sort: layer={fogLayerName} id={fogLayerId} order={fogOrder}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogWarning($"[Citadel] Fog probe failed: {ex.Message}");
+            }
+        }*/
+
+        public CitadelOverlay(IntPtr handle) : base(handle) { }
         public TextMeshPro? label;
         public SpriteRenderer? background;
         public Transform? contentTransform;
 
-        private void Awake()
+        public void Awake()
         {
             try
             {
@@ -137,21 +178,28 @@ namespace PolyMode
             }
 
             // ⭕ 【第三步：動態 Depth 層級設定】
-            int currentDepth = building.Depth;
+            //ProbeFogSort();
+
+            const string LayerName = "Terrain";
+            const int LayerId = 1783986775;
+            const int fogOrder = 31;
+
+            int orderBg = fogOrder - 2;   // 29
+            int orderText = fogOrder - 1; // 30
 
             var meshRenderer = label.GetComponent<MeshRenderer>();
             if (meshRenderer != null)
             {
-                meshRenderer.sortingLayerName = officialLayerName;
-                meshRenderer.sortingLayerID = officialLayerID;
-                meshRenderer.sortingOrder = currentDepth + 200;
+                meshRenderer.sortingLayerName = LayerName;
+                meshRenderer.sortingLayerID = LayerId;
+                meshRenderer.sortingOrder = orderText;
             }
 
             if (background != null)
             {
-                background.sortingLayerName = officialLayerName;
-                background.sortingLayerID = officialLayerID;
-                background.sortingOrder = currentDepth + 195;
+                background.sortingLayerName = LayerName;
+                background.sortingLayerID = LayerId;
+                background.sortingOrder = orderBg;
             }
 
             // ⭕ 【第四步：將 UpdateOverlaySize 邏輯全面攤平融入尾端（不依賴外部私有方法呼交）】

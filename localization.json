@@ -33,10 +33,10 @@
 		"English": "Citadel"
 	},
     "building_ability_citadel": {
-		"English": "Expands border of its city to adjacent tiles. You can train units on it and defence bonus is applied."
+		"English": "Expands border of its belonging city to its adjacent tiles. You can train units from it and defence bonus is applied."
 	},
-    "unit_names_citadelrammership": {
-		"English": "Rammer"
+    "building_ability_freemanual": {
+		"English": "If you have an actionable unit on the tile."
 	},
     "player_abilities_mountaincitadel": {
 		"English": "Mountain Citadel"
@@ -48,8 +48,11 @@
 		"English": "Unlocks Citadel on Mountain and provides defence bonus on tile."
 	},    
     "tooltip_ability_watercitadel": {
-		"English": "Unlocks Citadel on Water and provides defence bonus on tile. Units that move here will turn into rammer."
-	},     
+		"English": "Unlocks Citadel on Water and provides defence bonus on tile. Units that move here will permanently turn into rammer for free."
+	}, 
+    "unit_names_citadelrammership": {
+		"English": "Rammer"
+	},    
     "wcontroller_reward_evacuation": {
         "English": "Evacuation"
     },    
@@ -62,7 +65,7 @@
     "opinion_reason_obstinate": {
         "English": "obstinate"
       },
-      "opinion_reason_obstinate_description": {
+    "opinion_reason_obstinate_description": {
         "English": "Your empire rules many cities."
     }
 }

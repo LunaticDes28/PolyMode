@@ -1,13 +1,37 @@
 {
     "techData": {
-        "construction": {
-			"improvementUnlocks": [
-				"windmill",
-                "citadel",
-				"burnforest"
+		"basic": {
+			"techUnlocks": [
+				"organization",
+				"climbing",
+				"fishing",
+				"hunting",
+				"riding"
 			],
-			"cost": 3,
-			"idx": 9
+			"unitUnlocks": [
+				"giant",
+				"bunny",
+				"scout",
+				"transportship",
+				"warrior",
+				"babydragon",
+				"firedragon",
+				"dagger",
+				"larva"
+			],
+			"improvementUnlocks": [
+				"city",
+				"ruin",
+				"citadel"
+			],
+			"movementUnlocks": {
+				"field": 1,
+				"forest": 2,
+				"ice": 1,
+				"wetland":2
+			},
+			"cost": 0,
+			"idx": 0
 		},
 		"mining": {
 			"techUnlocks": [
@@ -37,6 +61,30 @@
 		}
     },
     "improvementData":{
+		"clearforest": {
+			"terrainRequirements": [
+				{
+					"terrain": "forest"
+				}
+			],
+			"creates": [
+				{
+					"terrain": "field"
+				}
+			],
+			"improvementAbilities": [
+				"consumed",
+				"freelance",
+				"freemanual"
+			],
+			"maxLevel": 0,
+			"rewards": [
+				{
+					"currency": 3
+				}
+			],
+			"idx": 10
+		},
 		"citadel": {
 			"cost": 20,
 			"terrainRequirements": [
@@ -84,6 +132,9 @@
     },
 	"improvementAbility": {
 		"citadel": {
+			"idx": -1
+		},
+		"freemanual": {
 			"idx": -1
 		}
 	},

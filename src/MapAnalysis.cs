@@ -300,6 +300,34 @@ namespace PolyMode
             }
         }
 
+        public static List<WorldCoordinates> CollectEnemyPositions(GameState gameState, WorldCoordinates start, int radius, byte player)
+        {
+            var list = new List<WorldCoordinates>();
+            var tiles = gameState.Map.GetAreaSorted(start, radius, true, true);
+            for (int i = 0; i < tiles.Length; i++)
+            {
+                TileData tile = tiles[i];
+                if (tile?.unit == null) continue;
+                if (tile.unit.owner == player || tile.unit.owner == 255) continue;
+                list.Add(tile.coordinates);
+            }
+            return list;
+        }
+
+        public static int MinChebyshevDistanceToEnemies(
+            WorldCoordinates from,
+            List<WorldCoordinates> enemies)
+        {
+            int best = int.MaxValue;
+            for (int i = 0; i < enemies.Count; i++)
+            {
+                int d = MapDataExtensions.ChebyshevDistance(from, enemies[i]);
+                if (d < best)
+                    best = d;
+            }
+            return best == int.MaxValue ? 0 : best;
+        }
+
         /// <summary>
         /// Land tile whose neighbors are mostly water/ocean (vanilla-style sea island / coastal scrap).
         /// </summary>

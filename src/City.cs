@@ -530,7 +530,17 @@ namespace PolyMode
                 {
                     if (tile.improvement.HasReward(EnumCache<CityReward>.GetType("taxreform")))
                     {
-                        __result *= 3;
+                        PlayerState playerState;
+                        gameState.TryGetPlayer(tile.owner, out playerState);
+                        if (playerState.AutoPlay && tile.capitalOf != 0)
+                        {
+                            __result = __result - (playerState.handicap - 1);
+                        }
+                        __result = __result * 3;
+                        if (playerState.AutoPlay && tile.capitalOf != 0)
+                        {
+                            __result = __result + (playerState.handicap - 1);
+                        }
                         __result = Math.Min(__result, 30);
                         
                         // Loader.modLogger?.LogInfo($"[Conquest-City] Work (B) successfully updated to: {__result}");
@@ -622,6 +632,16 @@ namespace PolyMode
             {
                 Loader.modLogger?.LogError($"[Conquest-City] Error in CityRewardReaction: {ex}");
             }
+        }
+
+        [HarmonyPrefix]
+        [HarmonyPatch(typeof(CityRenderer), nameof(CityRenderer.RefreshCity))]
+        private static void RefreshCity_CapHeight(CityRenderer __instance)
+        {
+            const int maxVisualLevel = 5;
+
+            if (__instance.Level > maxVisualLevel)
+                __instance.Level = maxVisualLevel;
         }
     }
 }

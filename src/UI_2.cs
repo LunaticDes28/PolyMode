@@ -40,7 +40,7 @@ namespace PolyMode
 
                         Loader.modLogger?.LogInfo($"[Conquest-UI] Added 'Conquest' mode to {__instance} in SinglePlay  with ID {Id}");
                     }
-                } else if (GameManager.PreliminaryGameSettings.GameType == GameType.PassAndPlay) {
+                } else if (GameManager.PreliminaryGameSettings.GameType == GameType.Competitive || GameManager.PreliminaryGameSettings.GameType == GameType.Multiplayer || GameManager.PreliminaryGameSettings.GameType == GameType.Matchmaking || GameManager.PreliminaryGameSettings.GameType == GameType.PassAndPlay) {
                     {
                         if (label != null && label  == Localization.Get("gamemode.might"))
                         {

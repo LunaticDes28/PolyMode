@@ -320,18 +320,18 @@ namespace PolyMode
 
             for (int i = 0; i < coast.Count; i++)
             {
-                TileData t = coast[i];
+                TileData tile2 = coast[i];
                 int minDist = int.MaxValue;
 
                 // 如果目前地圖上還沒有放置任何首都（洗牌或初次安放的第一個玩家）
                 if (currentCapitals.Count == 0)
                 {
-                    minDist = MapDataExtensions.ChebyshevDistance(t.coordinates, preferred.coordinates);
-                    int score2 = 1000 - minDist; // 越接近原版偏好點分數越高
-                    if (score2 > bestScore)
+                    minDist = MapDataExtensions.ChebyshevDistance(tile2.coordinates, preferred.coordinates);
+                    int score = 1000 - minDist; // 越接近原版偏好點分數越高
+                    if (score > bestScore)
                     {
-                        bestScore = score2;
-                        best = t;
+                        bestScore = score;
+                        best = tile2;
                     }
                     continue;
                 }
@@ -339,18 +339,18 @@ namespace PolyMode
                 // 遍歷 IL2CPP List 計算與其它已有首都的 Chebyshev 距離
                 for (int a = 0; a < currentCapitals.Count; a++)
                 {
-                    int d = MapDataExtensions.ChebyshevDistance(t.coordinates, currentCapitals[a].coordinates);
-                    if (d < minDist) minDist = d;
+                    int dist = MapDataExtensions.ChebyshevDistance(tile2.coordinates, currentCapitals[a].coordinates);
+                    if (dist < minDist) minDist = dist;
                 }
 
                 // 核心評分公式：極力拉開與其他首都的距離（minDist * 10），並帶有靠近原版偏好點的微小權重（-bias）
-                int bias = MapDataExtensions.ChebyshevDistance(t.coordinates, preferred.coordinates);
-                int score = (minDist * 10) - bias;
+                int bias = MapDataExtensions.ChebyshevDistance(tile2.coordinates, preferred.coordinates);
+                int score2 = (minDist * 10) - bias;
 
-                if (score > bestScore)
+                if (score2 > bestScore)
                 {
-                    bestScore = score;
-                    best = t;
+                    bestScore = score2;
+                    best = tile2;
                 }
             }
 
@@ -915,6 +915,26 @@ namespace PolyMode
                     }
                 }
 
+                if (tile.rulingCityCoordinates != WorldCoordinates.NULL_COORDINATES)
+                {
+                    TileData rulingCity = gameState.Map.GetTile(tile.rulingCityCoordinates);
+                    AI_2.GetCitadelCache(gameState, playerState);
+
+                    if (AI_2.cityCitadelCornerCache.TryGetValue(rulingCity.coordinates, out TileData? targetedCorner)
+                        && targetedCorner != null
+                        && tile.coordinates.X == targetedCorner.coordinates.X
+                        && tile.coordinates.Y == targetedCorner.coordinates.Y
+                        && playerState.AutoPlay)
+                    {
+                        if (improvement.type != EnumCache<ImprovementData.Type>.GetType("citadel") && improvement.type != ImprovementData.Type.Road)
+                        {
+                            //Loader.modLogger?.LogInfo($"[Conquest] Reserved tile for citadel");
+                            __result = false;
+                            return;
+                        }
+                    }
+                }
+
                 if (improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel") && tile.owner == playerState.Id)
                 {
                     int citadelCount = CountCityCitadel(gameState, tile);
@@ -1055,7 +1075,7 @@ namespace PolyMode
 
                 TileData tile = state.Map.GetTile(__instance.Coordinates);
             
-                if (tile.improvement.type != EnumCache<ImprovementData.Type>.GetType("citadel"))
+                if (tile.improvement != null && tile.improvement.type != EnumCache<ImprovementData.Type>.GetType("citadel"))
                 {
                     return true;
                 }
@@ -1127,7 +1147,7 @@ namespace PolyMode
             }
             catch (Exception ex)
             {
-                Loader.modLogger?.LogError($"[Conquest] Error in BuildAction Prefix: {ex}");
+                Loader.modLogger?.LogError($"[Conquest] Error in DestroyImprovementAction Prefix: {ex}");
                 return true;
             }
         }
@@ -1275,7 +1295,9 @@ namespace PolyMode
                 // Use the same gameState that was passed in — NOT GameManager.GameState
                 TileData cityCenter = gameState.Map.GetTile(centerCoords);
                 if (cityCenter == null)
+                {
                     return true;
+                }
 
                 var list = new Il2CppSystem.Collections.Generic.List<TileData>();
                 var visited = new HashSet<WorldCoordinates>();
@@ -1287,30 +1309,25 @@ namespace PolyMode
                 while (queue.Count > 0)
                 {
                     TileData current = queue.Dequeue();
-                    if (current == null)
-                        continue;
+                    if (current == null) continue;
 
                     list.Add(current);
 
-                    TileData[] neighbors = MapDataExtensions.GetTileNeighborsSorted(
-                        gameState.Map, current.coordinates);
+                    TileData[] neighbors = MapDataExtensions.GetTileNeighborsSorted(gameState.Map, current.coordinates);
                     if (neighbors == null) continue;
 
                     for (int i = 0; i < neighbors.Length; i++)
                     {
                         TileData n = neighbors[i];
-                        if (n == null || visited.Contains(n.coordinates))
-                            continue;
+                        if (n == null || visited.Contains(n.coordinates)) continue;
 
-                        if (n.coordinates == centerCoords
-                            || n.rulingCityCoordinates == centerCoords)
+                        if (n.coordinates == centerCoords || n.rulingCityCoordinates == centerCoords)
                         {
                             visited.Add(n.coordinates);
                             queue.Enqueue(n);
                         }
                     }
                 }
-
                 __result = list;
                 return false;
             }
@@ -1360,8 +1377,8 @@ namespace PolyMode
 
                 for (int i = 0; i < area.Count; i++)
                 {
-                    TileData t = area[i];
-                    if (t?.improvement != null && t.improvement.type == improvementType)
+                    TileData tile = area[i];
+                    if (tile?.improvement != null && tile.improvement.type == improvementType)
                     {
                         __result = true;
                         return false;
@@ -1474,6 +1491,24 @@ namespace PolyMode
             }
             return true;
         }*/
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(TileData), nameof(TileData.isValidBridgeAnchor))]
+        private static void isValidBridgeAnchor_Citadel(TileData tile, PlayerState player, GameState gameState, ref bool __result)
+        {
+            if (gameState.Version < 104)
+            {
+                __result = tile != null && !tile.IsWater && player != null && tile.GetExplored(player.Id);
+                return;
+            }
+
+            if (tile != null && tile.improvement != null && tile.improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel"))
+            {
+                __result = true;
+                return;
+            }
+            __result = tile != null && !tile.IsWater && player != null;
+        }
 
         [HarmonyPostfix]
         [HarmonyPatch(typeof(PathFinder), nameof(PathFinder.IsTileAccessible))]
@@ -1591,7 +1626,150 @@ namespace PolyMode
         }
 
         // =========================================================================
-        // G. Tech Cost & City Destruction Handler
+        // G. Citadel Logics (capture)
+        // =========================================================================
+        [HarmonyPrefix]
+        [HarmonyPatch(typeof(CaptureCommand), nameof(CaptureCommand.IsValid))]
+        private static bool IsValid_CitadelCapture(CaptureCommand __instance, GameState state, ref bool __result, out string validationError)
+        {
+            try
+            {
+                if (!__instance.PassesBasicValidation(state, out validationError))
+                {
+                    __result = false;
+                    return false;
+                }
+                TileData tile = state.Map.GetTile(__instance.Coordinates);
+                if (tile == null)
+                {
+                    validationError = "Missing tile";
+                    __result = false;
+                    return false;
+                }
+                if (!tile.HasImprovement(ImprovementData.Type.City) && !tile.HasImprovement(EnumCache<ImprovementData.Type>.GetType("citadel")) )
+                {
+                    validationError = "Missing city or citadel";
+                    __result = false;
+                    return false;
+                }
+                UnitState unitState;
+                if (!state.TryGetUnit(__instance.UnitId, out unitState))
+                {
+                    validationError = "Tile is missing unit";
+                    __result = false;
+                    return false;
+                }
+                if (!unitState.CanCapture(state, tile, false, true))
+                {
+                    validationError = "Can't capture";
+                    __result = false;
+                    return false;
+                }
+                validationError = "";
+                __result = true;
+                return false;
+            }
+            catch (Exception ex)
+            {
+                validationError = $"[Conquest-Capture] Error in CaptureCommand validation: {ex}";
+                Loader.modLogger?.LogError($"{validationError}");
+                return true;
+            }
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(UnitDataExtensions), nameof(UnitDataExtensions.CanCapture))]
+        private static void CanCapture_Citadel(UnitState unitState, GameState gameState, TileData tile, ref bool __result, bool includeNextTurn = false, bool allowOnlyOnTile = true)
+        {
+            try
+            {
+                PlayerState player;
+                __result = unitState.owner != byte.MaxValue && (includeNextTurn || (unitState.CanMove() && unitState.CanAttack())) && (!allowOnlyOnTile || !(tile.coordinates != unitState.coordinates)) && !unitState.HasLeader() && (!gameState.TryGetPlayer(unitState.owner, out player) || !player.HasPeaceWith(tile.owner)) && tile.improvement != null && tile.owner != unitState.owner && (tile.improvement.type == ImprovementData.Type.City || tile.improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel"));
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest-Capture] Error in CanCapture: {ex.Message}");
+            }
+        }
+
+        /*[HarmonyPostfix]
+        [HarmonyPatch(typeof(CaptureCommand), nameof(CaptureCommand.ExecuteDefault))]
+        private static void CaptureCommand_Citadel(CaptureCommand __instance, GameState state)
+        {
+            try
+            {
+                TileData tile = state.Map.GetTile(__instance.Coordinates);
+                PlayerState playerState;
+                if (tile.improvement != null && state.TryGetPlayer(__instance.PlayerId, out playerState))
+                {
+                    UnitState unitState;
+                    if (state.TryGetUnit(__instance.UnitId, out unitState))
+                    {
+                        unitState.moved = true;
+                        unitState.attacked = true;
+                        unitState.RemoveEffect(UnitEffect.Boosted);
+                        unitState.DisableFollowers(state);
+                    }
+                    byte owner = tile.owner;
+                    if (tile.owner != 0)
+                    {
+                        PlayerState playerState2;
+                        state.TryGetPlayer(tile.owner, out playerState2);
+                        playerState2.RemoveNonagression(__instance.PlayerId, state);
+                        playerState2.ModifyAggression(__instance.PlayerId, (int)((5 + tile.improvement.level) * 1000), state);
+                        foreach (PlayerState playerState3 in state.PlayerStates)
+                        {
+                            if (tile.GetExplored(playerState3.Id))
+                            {
+                                playerState3.ModifyAggression(__instance.PlayerId, (1000 - playerState.GetAggression(tile.owner, state)) / 2, state);
+                            }
+                        }
+                        if (playerState.GetAggression(tile.owner, state) > 1000)
+                        {
+                            playerState.ModifyAggression(tile.owner, (int)(-(5 + tile.improvement.level) * 333), state);
+                        }
+                    }
+                    state.ActionStack.Add(new UpdateRoutesAction(__instance.PlayerId));
+                    state.ActionStack.Add(new CaptureCityAction(__instance.PlayerId, __instance.Coordinates, owner));
+                    if (unitState != null && unitState.HasEffect(UnitEffect.Invisible))
+                    {
+                        state.ActionStack.Add(new RevealAction(__instance.PlayerId, __instance.Coordinates, false));
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest-Capture] Error in CaptureCommand Postfix: {ex.Message}");
+            }
+        }*/
+
+        [HarmonyPrefix]
+        [HarmonyPatch(typeof(CaptureCityAction), nameof(CaptureCityAction.ExecuteDefault))]
+        private static bool CaptureCityAction_Citadel(CaptureCityAction __instance, GameState gameState)
+        {
+            try
+            {
+                TileData cityTile = gameState.Map.GetTile(__instance.Coordinates);
+                PlayerState? attacker = null;
+                gameState.TryGetPlayer(__instance.PlayerId, out attacker);
+
+                if (cityTile != null && cityTile.improvement != null && cityTile.improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel") && attacker != null)
+                {
+                    gameState.ActionStack.Add(new DestroyImprovementAction(__instance.PlayerId, __instance.Coordinates));
+                    return false;
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest-Capture] Error in CaptureCommand Postfix: {ex.Message}");
+                return true;
+            }
+        }
+
+        // =========================================================================
+        // H. Tech Cost & City Destruction Handler
         // =========================================================================
         [HarmonyPostfix]
         [HarmonyPatch(typeof(GameLogicData), nameof(GameLogicData.GetTechPrice))]
@@ -1606,9 +1784,10 @@ namespace PolyMode
                     return;
                 };
 
-                float delayedTurn = Math.Max((float)state.CurrentTurn - 3, 0);
+                float delayedTurn = Math.Max((float)state.CurrentTurn - 5, 0);
+                float adjustedCities = Math.Max((float)(playerState.cities - 1) * 2, 2);
                 float num = Math.Max(4 + techData.cost, playerState.cities + delayedTurn * techData.cost);
-                num = (float)Math.Min(num, techData.cost * (playerState.cities + 0) * 2);
+                num = (float)Math.Min(num, techData.cost * adjustedCities);
                 
                 if (__instance.HasAbility(playerState, PlayerAbility.Type.Literacy))
                 {
@@ -1641,7 +1820,9 @@ namespace PolyMode
                 gameState.TryGetPlayer(__instance.PlayerId, out attacker);
 
                 if (cityTile != null && attacker != null)
+                {
                     DestroyCityConquest(gameState, cityTile, attacker, false);
+                }
 
                 return false;
             }
@@ -1781,6 +1962,7 @@ namespace PolyMode
                     Tile instance2 = cityArea[i].GetInstance();
                     if (instance2 != null)
                     {
+                        instance2.StopFire();
                         instance2.Render();
                     }
                 }
@@ -1827,7 +2009,7 @@ namespace PolyMode
         }
 
         // =========================================================================
-        // H. Win Conditions
+        // I. Win Conditions
         // =========================================================================
         [HarmonyPostfix]
         [HarmonyPatch(typeof(GameState), nameof(GameState.TryGetWinner))]
@@ -1879,12 +2061,12 @@ namespace PolyMode
             }
             catch (Exception ex)
             {
-                Loader.modLogger?.LogError($"[Conquest-AI] Error in TryGetWinner Postfix: {ex}");
+                Loader.modLogger?.LogError($"[Conquest] Error in TryGetWinner Postfix: {ex}");
             }
         }
 
         // =========================================================================
-        // I. Reactions
+        // J. Visuals
         // =========================================================================
         private static Il2CppSystem.Action? _activePopupCallbackHolder;
 
@@ -1979,6 +2161,12 @@ namespace PolyMode
             {
                 Loader.modLogger?.LogInfo("[Conquest-Popup] ExecutePopupLogic started.");
 
+                string? type = "itadel";
+                if (tile.improvement.type == ImprovementData.Type.Ruin)
+                {
+                    type = "ity";
+                }
+
                 if (GameManager.IsPlayerViewing((byte)attackerId) && !GameManager.Client.IsSpectating)
                 {
                     if (!CameraController.Instance.isTechViewEnabled == true)
@@ -1990,10 +2178,10 @@ namespace PolyMode
                     string tribeName = prevOwnerState.tribe.GetName();;
                     string capitalized = char.ToUpper(tribeName[0]) + tribeName.Substring(1);
                     
-                    string title = isPreviousOwnerCapital ? "Good News!" : "City Razed!";
+                    string title = isPreviousOwnerCapital ? "Good News!" : $"C{type} Razed!";
                     string message = isPreviousOwnerCapital 
                         ? $"You have razed the {capitalized} capital! All their trade connections are destroyed forever." 
-                        : $"The city is now a ruin on the ground.";
+                        : $"The c{type} is now a ruin on the ground.";
                     int time = isPreviousOwnerCapital ? 5 : 3;
                     
                     NotificationBase ntf = NotificationManager.GetBasicNotification();
@@ -2012,10 +2200,10 @@ namespace PolyMode
                     // Defender - With button
                     string linkedTribeNameWithSpace = playerState.GetLinkedTribeNameWithSpace(GameManager.GameState);
                     
-                    string title = isPreviousOwnerCapital ? "Bad News!" : "City Razed!";
+                    string title = isPreviousOwnerCapital ? "Bad News!" : $"C{type} Razed!";
                     string message = isPreviousOwnerCapital 
                         ? $"Your capital has fallen to {linkedTribeNameWithSpace}. All your trade connections are lost forever." 
-                        : $"Your city is wiped out from existence.";
+                        : $"Your c{type} is wiped out from existence.";
 
                     if (!isPreviousOwnerCapital) 
                     {
@@ -2063,5 +2251,105 @@ namespace PolyMode
                 onComplete?.Invoke();
             }
         }
+
+        [HarmonyPrefix]
+        [HarmonyPatch(typeof(ReactionUtils), nameof(ReactionUtils.UpdateSurroundingBordersAndTransportPaths))]
+        private static bool UpdateSurroundingBordersAndTransportPaths_Irregular(byte playerId, TileData cityTile)
+        {
+            try
+            {
+                if (GameManager.GameState?.Map == null || cityTile == null) return true;
+
+                var mode = GameManager.GameState.Settings?.RulesGameMode;
+                bool irregular = mode == EnumCache<GameMode>.GetType("conquest") || mode == EnumCache<GameMode>.GetType("reign");
+                if (!irregular) return true;
+
+                MapRenderContext ctx = MapRenderer.ConstructNewRenderContextUgly();
+                WorldCoordinates cityCoord = cityTile.coordinates;
+
+                // 1) all city tiles
+                var territory = ActionUtils.GetCityAreaSorted(GameManager.GameState, cityTile);
+
+                // 2) one ring outside
+                var refresh = new HashSet<WorldCoordinates>();
+                for (int i = 0; i < territory.Count; i++)
+                {
+                    TileData t = territory[i];
+                    refresh.Add(t.coordinates);
+
+                    var neighbors = GameManager.GameState.Map.GetTileNeighbors(t.coordinates);
+                    // var neighbors = GameManager.GameState.Map.GetArea(t.coordinates, 1, true, false);
+                    if (neighbors == null) continue;
+                    for (int n = 0; n < neighbors.Count; n++)
+                    {
+                        TileData nb = neighbors[n];
+                        if (nb != null)
+                        {
+                            refresh.Add(nb.coordinates);
+                        }
+                    }
+                }
+
+                foreach (WorldCoordinates c in refresh)
+                {
+                    TileData td = GameManager.GameState.Map.GetTile(c);
+                    Tile tile = td.GetInstance();
+                    if (tile != null && !tile.IsHidden)
+                    {
+                        tile.Render(ctx);
+                    }
+                }
+
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogWarning($"[Conquest] UpdateSurroundingBordersAndTransportPaths Error: {ex.Message}");
+                return true;
+            }
+        }
+
+        // =========================================================================
+        // K. Custom Improvements
+        // =========================================================================
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(GameLogicData), nameof(GameLogicData.CanBuild))]
+        private static void CanBuild_Chop(GameLogicData __instance, GameState gameState, TileData tile, PlayerState playerState, ImprovementData improvement, ref bool __result)
+        {
+            if (tile.improvement != null && improvement.type != ImprovementData.Type.Road) 
+            {
+                __result = false;
+                return;
+            }
+
+            if (tile.unit != null && tile.unit.owner != playerState.Id)
+            {
+                __result = false;
+                return;   
+            }
+
+			if (improvement.HasAbility(ImprovementAbility.Type.Limited) && __instance.HasImprovementWithinCityBorders(gameState.Map, tile.rulingCityCoordinates, improvement.type))
+			{
+                __result = false;
+				return;
+			}
+
+            try
+            {
+
+                if (improvement.HasAbility(ImprovementAbility.Type.Freelance) && improvement.HasAbility(EnumCache<ImprovementAbility.Type>.GetType("freemanual")))
+                {
+                    if (tile.owner != playerState.Id && (tile.unit == null || tile.unit.owner != playerState.Id || !tile.unit.CanMove() || !tile.unit.CanAttack()))
+                    {
+                        __result = false;
+                        return;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest] Error in CanBuild Postfix: {ex}");
+            }            
+        }   
     }
 }
