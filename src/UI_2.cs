@@ -286,6 +286,47 @@ namespace PolyMode
 
         [HarmonyPostfix]
         [HarmonyPatch(typeof(GameStatsScreen), nameof(GameStatsScreen.GetDescription))]
+        public static void GetDescription_Conquest(GameStatsScreen __instance, PlayerState player, int cityCount, string userName, ref string __result)
+        {
+            try
+            {
+                if (__instance.GameSettings.RulesGameMode != EnumCache<GameMode>.GetType("conquest"))
+                {
+                    return;
+                }
+
+                bool isSpectating = GameManager.Client.IsSpectating;
+                bool flag = player == GameManager.LocalPlayer && !isSpectating;
+                bool autoPlay = player.AutoPlay;
+                bool flag2 = player.IsAlive(GameManager.GameState);
+                bool flag3 = flag || GameManager.LocalPlayer.KnowsPlayer(player.Id) || !flag2 || (isSpectating && GameManager.LocalPlayer.Id == player.Id) || !autoPlay;
+                string arg = string.Empty;
+
+                if (flag3)
+                {
+                    arg = Localization.Get("gamestatus.ruled", new Il2CppReferenceArray<Il2CppSystem.Object>(new[] { (Il2CppSystem.Object)userName }));
+                }
+                else
+                {
+                    arg = Localization.Get("gamestatus.unknown.ruler", new Il2CppReferenceArray<Il2CppSystem.Object>(0));
+                }
+                if (!flag2)
+                {
+                    __result = string.Format("{0}", arg);
+                }
+                __result = string.Format("{0}, {1}", arg, Localization.Get((cityCount > 1) ? "gamestatus.cities" : "gamestatus.city", (Il2CppReferenceArray<Il2CppSystem.Object>)(new[]
+                    {
+                       (Il2CppSystem.Object)cityCount
+                    })));
+                }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest-Backend] GameStatsScreen GetDescription error: {ex}");
+            } 
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(GameStatsScreen), nameof(GameStatsScreen.GetDescription))]
         public static void GetDescription_Reign(GameStatsScreen __instance, PlayerState player, int cityCount, string userName, ref string __result)
         {
             try
@@ -483,10 +524,7 @@ namespace PolyMode
         {
             try
             {
-                if (gameMode != EnumCache<GameMode>.GetType("conquest"))
-                {
-                    return;
-                }
+                if (gameMode != EnumCache<GameMode>.GetType("conquest")) return;
 
                 players = GameState.GetPlayersSortedByCities(players);
 
