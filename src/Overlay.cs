@@ -239,29 +239,23 @@ namespace PolyMode
                     return;
 
                 var mode = GameManager.GameState.Settings.RulesGameMode;
-                if (mode != EnumCache<GameMode>.GetType("conquest")
-                    && mode != EnumCache<GameMode>.GetType("reign"))
-                    return;
+                if (mode != EnumCache<GameMode>.GetType("conquest") && mode != EnumCache<GameMode>.GetType("reign")) return;
 
-                if (__instance == null || data == null)
-                    return;
+                if (__instance == null || data == null) return;
 
-                if (data.type != EnumCache<ImprovementData.Type>.GetType("citadel"))
-                    return;
+                if (data.type != EnumCache<ImprovementData.Type>.GetType("citadel")) return;
 
-                if (data.type == ImprovementData.Type.City)
-                    return;
+                if (data.type == ImprovementData.Type.City) return;
 
-                if (__instance.transform == null)
-                    return;
+                if (!__instance.tile.data.GetExplored(__instance.Owner.Id)) return;
 
-                if (__instance.transform.Find("CitadelOverlay") != null)
-                    return;
+                if (__instance.transform == null) return;
+
+                if (__instance.transform.Find("CitadelOverlay") != null) return;
 
                 // 1. Get vanilla CityStatusDisplay
                 var vanillaDisplay = ObjectPool.GetPooledObject<CityStatusDisplay>("CityStatusDisplay");
-                if (vanillaDisplay == null)
-                    return;
+                if (vanillaDisplay == null) return;
 
                 Sprite? officialBgSprite = null;
                 TMP_FontAsset? officialFont = null;

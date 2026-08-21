@@ -238,8 +238,8 @@ namespace PolyMode
             }
             else if (level == 3)
             {
-                list.Add(CityReward.BorderGrowth);
                 list.Add(CityReward.PopulationGrowth);
+                list.Add(CityReward.BorderGrowth);
             }
             else if (level >= 4)
             {
@@ -305,7 +305,7 @@ namespace PolyMode
                         {
                             foreach (string item in req.mode)
                             {
-                                if (GameManager.PreliminaryGameSettings.rulesGameMode == EnumCache<GameMode>.GetType(item))
+                                if (GameManager.PreliminaryGameSettings.RulesGameMode == EnumCache<GameMode>.GetType(item))
                                 {
                                     modeMatch = true;
                                     break;
