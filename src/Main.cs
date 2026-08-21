@@ -1051,6 +1051,8 @@ namespace PolyMode
                                 instance.Render();
                             }
                         }
+
+                        ReactionUtils.UpdateSurroundingBordersAndTransportPaths(playerState.Id, tile);
                         // ActionUtils.RuleArea(gameState, playerState, tile, false);
                     }
                 }
@@ -1141,6 +1143,7 @@ namespace PolyMode
                             instance.Render();
                         }
                     }
+                    ReactionUtils.UpdateSurroundingBordersAndTransportPaths(cityTile.owner, tile);
                 }
                 
                 return true;
@@ -1966,6 +1969,11 @@ namespace PolyMode
                         instance2.Render();
                     }
                 }
+            }
+
+            if (playerState != null)
+            {
+                ReactionUtils.UpdateSurroundingBordersAndTransportPaths(playerState.Id, cityTile);
             }
 
             // 5. Generate ruins
