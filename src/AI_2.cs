@@ -1146,7 +1146,7 @@ namespace PolyMode
                             mult *= SaveUnitSpend(gameState, player, cmd);
                             if (trainsThisTurn >= 1)
                             {
-                                mult *= 0.50f;
+                                mult *= 0.40f;
                             }
                             if (trainsThisTurn >= 2)
                             {
@@ -1169,7 +1169,10 @@ namespace PolyMode
                                 // --- Forest actions ---
                                 if (bc.Type == ImprovementData.Type.ClearForest)
                                 {
-                                    mult *= (tile != null && CitySieged(gameState, player, tile)) ? 50f : 0f;
+                                    if (tile?.owner == player.Id)
+                                    {
+                                        mult *= (tile != null && CitySieged(gameState, player, tile)) ? 50f : 0f;
+                                    }
                                 }
                                 else if (bc.Type == ImprovementData.Type.BurnForest)
                                 {
@@ -1241,6 +1244,17 @@ namespace PolyMode
                                     }
                                     mult *= (forSecondary || forFarm) ? 0f : 1f;
                                     //Loader.modLogger?.LogInfo($"[AI-Budget] Grow mult = {mult} and Grow score = {sc.score * mult}");
+                                }
+                                else if (bc.Type == ImprovementData.Type.Port)
+                                {
+                                    if (tile == null)
+                                    {
+                                        mult *= 0f;
+                                    }
+                                    else
+                                    {
+                                        mult *= PortValueMult(gameState, player, tile, bc);
+                                    }
                                 }
                                 else
                                 {
@@ -1702,6 +1716,88 @@ namespace PolyMode
             {
                 return false;
             }
+        }
+        private static float PortValueMult(GameState gameState, PlayerState player, TileData tile, BuildCommand bc)
+        {
+            try
+            {
+                if (tile == null || player == null || gameState?.GameLogicData == null)
+                {
+                    return 0f;
+                }
+
+                if (!gameState.GameLogicData.TryGetData(bc.Type, out ImprovementData data) || data == null)
+                {
+                    return 0f;
+                }
+
+                int existing = 0;
+                if (tile.rulingCityCoordinates != WorldCoordinates.NULL_COORDINATES)
+                {
+                    TileData city = gameState.Map.GetTile(tile.rulingCityCoordinates);
+                    if (city != null)
+                    {
+                        var area = ActionUtils.GetCityAreaSorted(gameState, city);
+                        if (area != null)
+                        {
+                            for (int i = 0; i < area.Count; i++)
+                            {
+                                TileData tileData = area[i];
+                                if (tileData?.improvement != null && tileData.improvement.type == ImprovementData.Type.Port)
+                                {
+                                    existing++;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                float value = existing == 0 ? 1.0f : 0.5f;
+                value -= (float)(0.1 * existing);
+                value = (float)Math.Max(0.1, value);
+
+                int cost = Math.Max(1, data.cost);
+                int currency = player.Currency;
+                if (currency < cost * 2)
+                {
+                    value *= 0.5f;
+                }
+
+                if (!TileTouchesWater(gameState, tile))
+                {
+                    value *= 0.5f;
+                }
+
+                if (CitySieged(gameState, player, tile))
+                {
+                    value *= 0.25f;
+                }
+
+                return value;
+            }
+            catch
+            {
+                return 0f;
+            }
+        }
+
+        private static bool TileTouchesWater(GameState gameState, TileData tile)
+        {
+            try
+            {
+                if (tile.terrain.IsWater()) return true;
+                var n = gameState.Map.GetTileNeighbors(tile.coordinates);
+                if (n == null) return false;
+                for (int i = 0; i < n.Count; i++)
+                {
+                    if (n[i] != null && n[i].terrain.IsWater())
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch { }
+            return false;
         }
     }
 }

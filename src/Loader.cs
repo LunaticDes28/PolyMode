@@ -62,11 +62,11 @@ namespace PolyMode
                 EnumCache<GameMode>.AddMapping(id, (GameMode)Registry.gameModesAutoidx);
                 EnumCache<GameMode>.AddMapping(id, (GameMode)Registry.gameModesAutoidx);
                 
-                modLogger?.LogInfo($"[Conquest-Loader] EnumCache mapping successfully bound to index: {PolyMod.Registry.gameModesAutoidx}");
+                modLogger?.LogInfo($"[Conquest-Loader] EnumCache mapping successfully bound to index: {Registry.gameModesAutoidx}");
 
                 // 2. Increment the auto-index counter to keep memory aligned for other mods
-                PolyMod.Registry.gameModesAutoidx++;
-                modLogger?.LogInfo($"[Conquest-Loader] Registration completed. Next index: {PolyMod.Registry.gameModesAutoidx}");
+                Registry.gameModesAutoidx++;
+                modLogger?.LogInfo($"[Conquest-Loader] Registration completed. Next index: {Registry.gameModesAutoidx}");
             }
             catch (Exception ex)
             {

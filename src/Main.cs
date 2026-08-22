@@ -1269,25 +1269,31 @@ namespace PolyMode
         {
             try
             {
-                if (gameState?.Settings == null || gameState.Map == null || cityTile == null)
+                if (gameState?.Map == null || cityTile == null)
+                {
+                    __result = new Il2CppSystem.Collections.Generic.List<TileData>();
+                    return false;
+                }
+
+                if (cityTile.improvement == null
+                    || cityTile.improvement.type != ImprovementData.Type.City)
+                {
+                    // Ruin / citadel / cleared → empty, skip vanilla
+                    __result = new Il2CppSystem.Collections.Generic.List<TileData>();
+                    return false;
+                }
+
+                if (gameState.Settings == null
+                    || (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                        && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign")))
                 {
                     return true;
                 }
 
-                if (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
-                    && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
-                {    
-                    return true;
-                }
-
-                if (cityTile.owner == 0)
+                if (cityTile.owner == 0 || !gameState.TryGetPlayer(cityTile.owner, out _))
                 {
-                    return true;
-                }
-
-                if (!gameState.TryGetPlayer(cityTile.owner, out _))
-                {
-                    return true;
+                    __result = new Il2CppSystem.Collections.Generic.List<TileData>();
+                    return false;
                 }
 
                 WorldCoordinates centerCoords =
@@ -1295,11 +1301,11 @@ namespace PolyMode
                         ? cityTile.coordinates
                         : cityTile.rulingCityCoordinates;
 
-                // Use the same gameState that was passed in — NOT GameManager.GameState
                 TileData cityCenter = gameState.Map.GetTile(centerCoords);
                 if (cityCenter == null)
                 {
-                    return true;
+                    __result = new Il2CppSystem.Collections.Generic.List<TileData>();
+                    return false;
                 }
 
                 var list = new Il2CppSystem.Collections.Generic.List<TileData>();
@@ -1313,10 +1319,10 @@ namespace PolyMode
                 {
                     TileData current = queue.Dequeue();
                     if (current == null) continue;
-
                     list.Add(current);
 
-                    TileData[] neighbors = MapDataExtensions.GetTileNeighborsSorted(gameState.Map, current.coordinates);
+                    TileData[] neighbors =
+                        MapDataExtensions.GetTileNeighborsSorted(gameState.Map, current.coordinates);
                     if (neighbors == null) continue;
 
                     for (int i = 0; i < neighbors.Length; i++)
@@ -1331,13 +1337,15 @@ namespace PolyMode
                         }
                     }
                 }
+
                 __result = list;
                 return false;
             }
             catch (Exception ex)
             {
                 Loader.modLogger?.LogError($"[Conquest] GetCityAreaSorted: {ex}");
-                return true;
+                __result = new Il2CppSystem.Collections.Generic.List<TileData>();
+                return false;
             }
         }
 
@@ -2262,46 +2270,70 @@ namespace PolyMode
 
         [HarmonyPrefix]
         [HarmonyPatch(typeof(ReactionUtils), nameof(ReactionUtils.UpdateSurroundingBordersAndTransportPaths))]
-        private static bool UpdateSurroundingBordersAndTransportPaths_Irregular(byte playerId, TileData cityTile)
+        private static bool UpdateSurroundingBorders_Irregular(byte playerId, TileData cityTile)
         {
             try
             {
-                if (GameManager.GameState?.Map == null || cityTile == null) return true;
+                if (GameManager.GameState?.Map == null || cityTile == null)
+                {
+                    return false;
+                }
+
+                if (cityTile.improvement == null || cityTile.improvement.type != ImprovementData.Type.City)
+                {
+                    return false;
+                }
 
                 var mode = GameManager.GameState.Settings?.RulesGameMode;
                 bool irregular = mode == EnumCache<GameMode>.GetType("conquest") || mode == EnumCache<GameMode>.GetType("reign");
-                if (!irregular) return true;
+                if (!irregular)
+                {
+                    return true;
+                }
 
-                MapRenderContext ctx = MapRenderer.ConstructNewRenderContextUgly();
                 WorldCoordinates cityCoord = cityTile.coordinates;
 
-                // 1) all city tiles
+                MapRenderContext ctx = MapRenderer.ConstructNewRenderContextUgly();
                 var territory = ActionUtils.GetCityAreaSorted(GameManager.GameState, cityTile);
 
-                // 2) one ring outside
                 var refresh = new HashSet<WorldCoordinates>();
-                for (int i = 0; i < territory.Count; i++)
+                if (territory != null)
                 {
-                    TileData t = territory[i];
-                    refresh.Add(t.coordinates);
-
-                    var neighbors = GameManager.GameState.Map.GetTileNeighbors(t.coordinates);
-                    // var neighbors = GameManager.GameState.Map.GetArea(t.coordinates, 1, true, false);
-                    if (neighbors == null) continue;
-                    for (int n = 0; n < neighbors.Count; n++)
+                    for (int i = 0; i < territory.Count; i++)
                     {
-                        TileData nb = neighbors[n];
-                        if (nb != null)
+                        TileData tileData = territory[i];
+                        if (tileData == null) continue;
+                        refresh.Add(tileData.coordinates);
+
+                        var neighbors = GameManager.GameState.Map.GetTileNeighbors(tileData.coordinates);
+                        if (neighbors == null) continue;
+
+                        for (int n = 0; n < neighbors.Count; n++)
                         {
-                            refresh.Add(nb.coordinates);
+                            TileData nb = neighbors[n];
+                            if (nb != null)
+                            {
+                                refresh.Add(nb.coordinates);
+                            }
                         }
                     }
                 }
 
+                refresh.Add(cityCoord);
+                var ring = GameManager.GameState.Map.GetArea(cityCoord, 1, true, true);
+                if (ring != null)
+                {
+                    for (int i = 0; i < ring.Count; i++)
+                        if (ring[i] != null)
+                        {
+                            refresh.Add(ring[i].coordinates);
+                        }
+                }
+
                 foreach (WorldCoordinates c in refresh)
                 {
-                    TileData td = GameManager.GameState.Map.GetTile(c);
-                    Tile tile = td.GetInstance();
+                    TileData tileData2 = GameManager.GameState.Map.GetTile(c);
+                    Tile tile = tileData2.GetInstance();
                     if (tile != null && !tile.IsHidden)
                     {
                         tile.Render(ctx);
@@ -2313,7 +2345,7 @@ namespace PolyMode
             catch (Exception ex)
             {
                 Loader.modLogger?.LogWarning($"[Conquest] UpdateSurroundingBordersAndTransportPaths Error: {ex.Message}");
-                return true;
+                return false;
             }
         }
 
