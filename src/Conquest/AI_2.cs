@@ -1,8 +1,10 @@
 using HarmonyLib;
+using Il2CppSystem.Threading.Tasks;
 using Polytopia.Data;
 using PolytopiaBackendBase.Game;
+using PolyMode;
 
-namespace PolyMode
+namespace Conquest
 {
     public static class AI_2
     {
@@ -72,25 +74,35 @@ namespace PolyMode
                 return;
 
             float cityAdvantage = opponent.GetCityAdvantage(gameState);
-            if (cityAdvantage <= 0f) return;
 
             float hate = cityAdvantage;
             var opinionState = new OpinionState();
-            opinionState.AddOpinion(hate * 2.3f, EnumCache<OpinionManager.Type>.GetType("obstinate"));
-            opinionState.AddOpinion(hate * 1.2f, OpinionManager.Type.Winning);
+
+            if (cityAdvantage > 0f)
+            {
+                opinionState.AddOpinion(hate * 2.2f, EnumCache<OpinionManager.Type>.GetType("obstinate"));
+                opinionState.AddOpinion(hate * 0.7f, OpinionManager.Type.Winning);
+            }
+            else
+            {
+                opinionState.AddOpinion(-hate * 2.2f, OpinionManager.Type.Weak);
+            }
 
             if (!__instance.Opinions.ContainsKey(opponent.Id))
                 __instance.Opinions[opponent.Id] = new OpinionState();
 
             __instance.Opinions[opponent.Id].AddOpinion(
+                opinionState.GetOpinion(EnumCache<OpinionManager.Type>.GetType("obstinate")) * -1f,
+                EnumCache<OpinionManager.Type>.GetType("obstinate"));
+            __instance.Opinions[opponent.Id].AddOpinion(
                 opinionState.GetOpinion(OpinionManager.Type.Winning) * -1f,
                 OpinionManager.Type.Winning);
             __instance.Opinions[opponent.Id].AddOpinion(
-                opinionState.GetOpinion(EnumCache<OpinionManager.Type>.GetType("obstinate")) * -1f,
-                EnumCache<OpinionManager.Type>.GetType("obstinate"));
+                opinionState.GetOpinion(OpinionManager.Type.Weak) * -1f,
+                OpinionManager.Type.Weak);
         }
 
-        [HarmonyPostfix]
+        /*[HarmonyPostfix]
         [HarmonyPatch(typeof(AI), nameof(AI.RateBattle))]
         private static void RateBattle_Cities(
             GameState gameState, UnitState attackingUnit, TileData defendingTile, ref float __result)
@@ -103,8 +115,10 @@ namespace PolyMode
 
             float cityAdv = gameState.PlayerStates[defendingTile.owner].GetCityAdvantage(gameState);
             if (cityAdv > 0f)
-                __result += cityAdv * 2f;
-        }
+            {
+                __result += (float)(cityAdv * 0.5);
+            }
+        }*/
 
         public static float GetAverageCities(GameState state)
         {
@@ -397,7 +411,7 @@ namespace PolyMode
         {
             try
             {
-                if (gameState?.Map == null || player == null || possibleCommands == null) return;
+                if (gameState?.Map == null || player == null || !player.AutoPlay || possibleCommands == null) return;
 
                 // Empire tiles only
                 Il2CppSystem.Collections.Generic.List<TileData>? empireTiles = null;
@@ -497,6 +511,78 @@ namespace PolyMode
                 Loader.modLogger?.LogWarning($"[Conquest-AI] AddPossibleRoadBuildingCommands: {ex.Message}");
             }
         }*/
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(MapDataExtensions), nameof(MapDataExtensions.GetPlayerCityTiles))]
+        private static void GetPlayerCityTiles_Citadel(MapData mapData, byte playerId, Il2CppSystem.Collections.Generic.List<TileData> cityTiles)
+        {
+            if (cityTiles == null)
+            {
+                cityTiles = new Il2CppSystem.Collections.Generic.List<TileData>();
+            }
+            cityTiles.Clear();
+            foreach (TileData tileData in mapData.Tiles)
+            {
+                if (tileData.owner == playerId && (tileData.HasImprovement(ImprovementData.Type.City) || tileData.HasImprovement(EnumCache<ImprovementData.Type>.GetType("citadel"))))
+                {
+                    cityTiles.Add(tileData);
+                }
+            }
+        }
+
+        [HarmonyPrefix]
+        [HarmonyPatch(typeof(TileData), "get_IsConnected")]
+        private static bool IsConnected_Citadel_Prefix(TileData __instance, ref bool __result)
+        {
+            try
+            {
+                if (__instance?.improvement == null)
+                    return true; // let vanilla warn / return false
+
+                // Real city → vanilla
+                if (__instance.improvement.type == ImprovementData.Type.City)
+                    return true;
+
+                var citadelType = EnumCache<ImprovementData.Type>.GetType("citadel");
+                if (__instance.improvement.type != citadelType)
+                    return true; // other non-city → vanilla warning (or handle below)
+
+                // --- citadel: do not run vanilla ---
+                if (__instance.owner == 0)
+                {
+                    __result = false;
+                    return false;
+                }
+
+                bool isCapital = __instance.capitalOf == __instance.owner;
+                bool linked =
+                    __instance.improvement.connectedToCapitalOfPlayer == __instance.owner;
+
+                if (!isCapital && !linked
+                    && __instance.rulingCityCoordinates != WorldCoordinates.NULL_COORDINATES)
+                {
+                    var map = GameManager.GameState?.Map;
+                    TileData city = map.GetTile(__instance.rulingCityCoordinates);
+                    if (city != null
+                        && city.HasImprovement(ImprovementData.Type.City)
+                        && city.owner == __instance.owner
+                        && city.improvement != null)
+                    {
+                        linked =
+                            city.improvement.connectedToCapitalOfPlayer == __instance.owner
+                            || city.capitalOf == __instance.owner;
+                    }
+                }
+
+                __result = isCapital || linked;
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest] IsConnected prefix: {ex}");
+                return true;
+            }
+        }
 
         // =========================================================================
         // C. Destroy
@@ -723,7 +809,9 @@ namespace PolyMode
 
                             leaveAny.Add(c);
                             if (!danger.Contains(c))
+                            {
                                 leaveSafe.Add(c);
+                            }
                         }
 
                         if (leaveSafe.Count > 0)
@@ -746,6 +834,7 @@ namespace PolyMode
                     && unit.type != UnitData.Type.Juggernaut
                     && !unit.HasAbility(UnitAbility.Type.Infiltrate))
                 {
+                    //Loader.modLogger?.LogInfo($"[Conquest-AI] Stiff detected");
                     HashSet<WorldCoordinates> danger = GetDangerousTilesCached(gameState, player);
 
                     for (int i = __result.Count - 1; i >= 0; i--)
@@ -760,10 +849,19 @@ namespace PolyMode
                 // -----------------------------------------------------------------
                 // 2) Escape
                 // -----------------------------------------------------------------
-                if (unit.UnitData.HasAbility(UnitAbility.Type.Escape) && !unit.CanAttack())
+                if (unit.UnitData.HasAbility(UnitAbility.Type.Escape))
+                //if (unit.type == UnitData.Type.Rider)
                 {
+                    //Loader.modLogger?.LogInfo($"[Conquest-AI] Escape detected");
+                    if (!unit.attacked)
+                    {
+                        goto notAttacked;
+                    }
+
+                    //Loader.modLogger?.LogInfo($"[Conquest-AI] Escape has attacked");
                     List<WorldCoordinates> enemyPositions = MapAnalysis.CollectEnemyPositions(gameState, start, 7, player.Id);
                     if (enemyPositions.Count == 0 || __result.Count == 0) return;
+                    //Loader.modLogger?.LogInfo($"[Conquest-AI] Enemy count for escape not null");
 
                     WorldCoordinates bestTile = WorldCoordinates.NULL_COORDINATES;
                     int bestMinDist = int.MinValue;
@@ -771,14 +869,14 @@ namespace PolyMode
 
                     for (int i = 0; i < __result.Count; i++)
                     {
+                        TileData tileData = gameState.Map.GetTile(__result[i]);
                         int minDist = MapAnalysis.MinChebyshevDistanceToEnemies(__result[i], enemyPositions);
-                        if (minDist > bestMinDist)
+                        if (minDist > bestMinDist && tileData.unit == null)
                         {
                             bestTile = __result[i];
                             bestMinDist = minDist;
                         }
 
-                        TileData tileData = gameState.Map.GetTile(__result[i]);
                         if (tileData?.improvement != null
                             && tileData.improvement.type == ImprovementData.Type.City
                             && tileData.owner != unit.owner)
@@ -787,18 +885,27 @@ namespace PolyMode
                         }
                     }
 
-                    if (bestTile != WorldCoordinates.NULL_COORDINATES && !scored.Exists(s => s.tile == bestTile))
+                    //Loader.modLogger?.LogInfo($"[Conquest-AI] Best escape location calculated");
+                    
+                    if (bestTile != WorldCoordinates.NULL_COORDINATES && !scored.Contains((bestTile, bestMinDist)))
                     {
                         scored.Add((bestTile, bestMinDist));
                     }
 
                     __result = new Il2CppSystem.Collections.Generic.List<WorldCoordinates>();
+                    //Loader.modLogger?.LogInfo($"[Conquest-AI] New list created for escape");
                     for (int i = 0; i < scored.Count; i++)
                     {
                         if (scored[i].tile != WorldCoordinates.NULL_COORDINATES)
+                        {
                             __result.Add(scored[i].tile);
+                            //Loader.modLogger?.LogInfo($"[Conquest-AI] Escape tile is {scored[i].tile} and count is {scored.Count}");
+                        }
                     }
                 }
+
+                notAttacked:
+                return;
             }
             catch (Exception ex)
             {
@@ -857,9 +964,7 @@ namespace PolyMode
             Faction findType = Faction.Both,
             bool findMost = false)
         {
-            return MapAnalysis.ScanCityForCorners(
-                map, gameState, cityTile, searchRadius, currentOwner,
-                findType, findMost, requireEmptyTile: false);
+            return MapAnalysis.ScanCityForCorners(map, gameState, cityTile, searchRadius, currentOwner, findType, findMost, requireEmptyTile: false);
         }
 
         public static Il2CppSystem.Collections.Generic.List<CommandBase> ForceGetBuildableImprovements(
@@ -874,12 +979,13 @@ namespace PolyMode
                 if (player.currency < improvementData.cost) continue;
 
                 if (gameState.GameLogicData.MeetsRequirement(tile, improvementData, player, gameState)
-                    && gameState.GameLogicData.MeetsAdjacencyRequirement(
-                        gameState.Map, tile, improvementData.adjacencyRequirements))
+                    && gameState.GameLogicData.MeetsAdjacencyRequirement(gameState.Map, tile, improvementData.adjacencyRequirements))
                 {
                     var command = new BuildCommand(player.Id, improvementData.type, tile.coordinates);
                     if (includeUnavailable || command.IsValid(gameState))
+                    {
                         list.Add(command);
+                    }
                 }
             }
 
@@ -1206,11 +1312,11 @@ namespace PolyMode
                                 }
                                 else if (bc.Type == ImprovementData.Type.GrowForest)
                                 {
-                                    Loader.modLogger?.LogInfo($"[AI-Budget] Grow");
+                                    Loader.modLogger?.LogInfo($"[AI-Budget] Grow detected");
                                     // Don't grow forest over tiles that can host strong secondaries
                                     bool forSecondary = false;
                                     bool forFarm = false;
-                                    if (tile != null && tile.improvement == null)
+                                    if (tile != null)
                                     {
                                         try
                                         {
@@ -1242,8 +1348,8 @@ namespace PolyMode
                                         }
                                         catch { }
                                     }
-                                    mult *= (forSecondary || forFarm) ? 0f : 1f;
-                                    //Loader.modLogger?.LogInfo($"[AI-Budget] Grow mult = {mult} and Grow score = {sc.score * mult}");
+                                    mult *= (forSecondary || forFarm) ? 0f : 1.5f;
+                                    Loader.modLogger?.LogInfo($"[AI-Budget] Grow mult = {mult} and Grow score = {sc.score * mult}");
                                 }
                                 else if (bc.Type == ImprovementData.Type.Port)
                                 {
@@ -1305,9 +1411,9 @@ namespace PolyMode
                     float cmdScore = managed[i].score;
                     if (cmd != null && cmd.IsValid(gameState) && cmdScore > 0)
                     {
-                        //if (cmd.GetCommandType() == CommandType.Build && cmd.Cast<BuildCommand>().Type == ImprovementData.Type.GrowForest)
+                        if (cmd.GetCommandType() == CommandType.Build && cmd.Cast<BuildCommand>().Type == ImprovementData.Type.GrowForest)
                         {
-                            //Loader.modLogger?.LogInfo($"[Conquest] First valid cmd is {cmd.TryCast<BuildCommand>().Type.GetDisplayName()} with score {cmdScore}");
+                            Loader.modLogger?.LogInfo($"[Conquest] First valid cmd is {cmd.TryCast<BuildCommand>()?.Type.GetDisplayName()} with score {cmdScore}");
                         }
                         __result = cmd;
                         return false; // skip original
@@ -1492,7 +1598,6 @@ namespace PolyMode
 
             int currency = Math.Max(1, player.Currency);
 
-            // Vanilla: unitNeed > 0 → want more units; < 0 → already enough
             float unitNeed = 0f;
             try
             {
@@ -1527,8 +1632,8 @@ namespace PolyMode
                 }
             }
 
-            // Broke: almost never giant units
-            if (currency <= 3 && cost > 3)
+            // Broke: almost never costly units
+            if (currency <= 5 && cost >= 5)
             {
                 bias *= 0.5f;
             }

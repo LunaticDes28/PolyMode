@@ -4,8 +4,9 @@ using PolytopiaBackendBase.Common;
 using Polytopia.Data;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using UnityEngine.EventSystems;
+using PolyMode;
 
-namespace PolyMode
+namespace Conquest
 {
     public static class Main
     {

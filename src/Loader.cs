@@ -31,20 +31,18 @@ namespace PolyMode
 
             // 載入所有 Harmony 補丁
             Harmony.CreateAndPatchAll(typeof(Loader));
-            Harmony.CreateAndPatchAll(typeof(Main));
             Harmony.CreateAndPatchAll(typeof(UI_2));
             Harmony.CreateAndPatchAll(typeof(City));
-            Harmony.CreateAndPatchAll(typeof(AI_2));
             Harmony.CreateAndPatchAll(typeof(MapAnalysis));
-            
+
             Harmony.CreateAndPatchAll(typeof(CitadelOverlay));
-            Harmony.CreateAndPatchAll(typeof(CitadelOverlayPatches));
+            Harmony.CreateAndPatchAll(typeof(OverlayPatches));
+
+            Harmony.CreateAndPatchAll(typeof(Conquest.Main));
+            Harmony.CreateAndPatchAll(typeof(Conquest.AI_2));
 
             RegisterCustomGameMode("conquest");
             RegisterCustomGameMode("reign");
-            //RegisterCustomCityReward("evacuation");
-            //RegisterCustomCityReward("valhalla");
-            //RegisterCustomCityReward("taxreform");
 
             PolyMod.Loader.AddPatchDataType("cityReward", typeof(CityReward));
             PolyMod.Loader.AddPatchDataType("opinion", typeof(OpinionManager.Type));

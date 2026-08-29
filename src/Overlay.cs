@@ -89,7 +89,7 @@ namespace PolyMode
 
                     if (bgSprite != null) background.sprite = bgSprite;
                     background.color = new Color(0.1f, 0.1f, 0.1f, 0.7f);
-                    background.sortingOrder = 95; 
+                    background.sortingOrder = 29; 
                 }
 
                 // 3. Content 節點建立
@@ -226,7 +226,7 @@ namespace PolyMode
         }
     }
 
-    public class CitadelOverlayPatches
+    public class OverlayPatches
     {
         [HarmonyPostfix]
         [HarmonyPatch(typeof(Building), nameof(Building.SetData))]
@@ -235,8 +235,7 @@ namespace PolyMode
             try
             {
                 // ===== Safe GameState / mode check =====
-                if (GameManager.GameState == null || GameManager.GameState.Settings == null)
-                    return;
+                if (GameManager.GameState == null || GameManager.GameState.Settings == null) return;
 
                 var mode = GameManager.GameState.Settings.RulesGameMode;
                 if (mode != EnumCache<GameMode>.GetType("conquest") && mode != EnumCache<GameMode>.GetType("reign")) return;
@@ -247,7 +246,7 @@ namespace PolyMode
 
                 if (data.type == ImprovementData.Type.City) return;
 
-                if (!__instance.tile.data.GetExplored(__instance.Owner.Id)) return;
+                // if (!__instance.tile.data.GetExplored(__instance.Owner.Id)) return;
 
                 if (__instance.transform == null) return;
 

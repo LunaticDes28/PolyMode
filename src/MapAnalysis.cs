@@ -221,7 +221,7 @@ namespace PolyMode
 
             try
             {
-                AI_2.skipMoveOptionsPatch = true;
+                Conquest.AI_2.skipMoveOptionsPatch = true;
 
                 foreach (TileData tile in gameState.Map.Tiles)
                 {
@@ -276,7 +276,7 @@ namespace PolyMode
             }
             finally
             {
-                AI_2.skipMoveOptionsPatch = false;
+                Conquest.AI_2.skipMoveOptionsPatch = false;
             }
 
             return danger;

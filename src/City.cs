@@ -404,7 +404,7 @@ namespace PolyMode
 
             if (__instance.Reward == EnumCache<CityReward>.GetType("evacuation"))
             {
-                Main.DestroyCityConquest(state, tile, playerState, true);
+                Conquest.Main.DestroyCityConquest(state, tile, playerState, true);
             }
             else
             {
