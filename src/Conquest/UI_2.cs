@@ -4,8 +4,9 @@ using UnityEngine;
 using UnityEngine.UI;
 using Polytopia.Data;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
+using PolyMode;
 
-namespace PolyMode
+namespace Conquest
 {
     public static class UI_2
     {
@@ -17,7 +18,7 @@ namespace PolyMode
         // =========================================================================
         [HarmonyPostfix]
         [HarmonyPatch(typeof(UIHorizontalListData), nameof(UIHorizontalListData.AddItem))]
-        public static void AddItem_GamemodeOptions(UIHorizontalListData __instance, string label, int id)
+        public static void AddItem_Conquest(UIHorizontalListData __instance, string label, int id)
         {
             if (__instance == null) return;
 
@@ -55,7 +56,7 @@ namespace PolyMode
                             int Id = (int)EnumCache<GameMode>.GetType("reign");
                             __instance.AddItem("Reign", Id);
 
-                            Loader.modLogger?.LogInfo($"[Conquest-UI] Added 'Reign' mode to {__instance} in PassnPlay with ID {Id}");
+                            Loader.modLogger?.LogInfo($"[Conquest-UI] Added 'Reign' mode to {__instance} in Multi with ID {Id}");
                         }
                     }
                 }
@@ -98,8 +99,11 @@ namespace PolyMode
                 {
                     IsConquestSelected = false;
                     IsReignSelected = false;
+                    __instance.view.SetShowGameModeDescriptionText($"gamemode.{selectedText.ToLowerInvariant()}.description");
                     Loader.modLogger?.LogInfo($"[Conquest-UI] Mode changed to: {selectedText} (FALSE).");
                 }
+
+                __instance.UpdateLayout();
 
                 if (GameManager.PreliminaryGameSettings.GameType == GameType.SinglePlayer)
                 {

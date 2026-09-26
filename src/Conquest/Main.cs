@@ -14,34 +14,34 @@ namespace Conquest
         // A. GameMode Settings
         // =========================================================================
         [HarmonyPostfix]
-        [HarmonyPatch(typeof(GameStateUtils), nameof(GameStateUtils.GenerateMap))]
-        private static void GenerateMap_SetGamemode(GameState gameState)
+        [HarmonyPatch(typeof(MapGenerator), nameof(MapGenerator.Generate))]
+        private static void Generate_SetGamemode(GameState state, MapGeneratorSettings settings)
         {
             try
             {
                 bool isConquest = UI_2.IsConquestSelected;
                 bool isReign = UI_2.IsReignSelected;
-                if (!isConquest && !isReign) return;
 
-                Loader.modLogger?.LogInfo("[Conquest-Map] Conquest Mode selected!");
+                //Loader.modLogger?.LogInfo("[Conquest-Map] Conquest Mode selected!");
+                if (GameManager.PreliminaryGameSettings.GameType == GameType.Matchmaking || GameManager.PreliminaryGameSettings.GameType == GameType.Multiplayer || GameManager.PreliminaryGameSettings.GameType == GameType.PassAndPlay) return;
 
                 // Pseudo GameSettings in GameState
-                if (isConquest) 
+                if (isConquest || GameManager.PreliminaryGameSettings.RulesGameMode == EnumCache<GameMode>.GetType("conquest")) 
                 {
-                    gameState.Settings.RulesGameMode = EnumCache<GameMode>.GetType("conquest");
-                    gameState.Settings.rules.WinByExtermination = true;
+                    state.Settings.RulesGameMode = EnumCache<GameMode>.GetType("conquest");
+                    state.Settings.rules.WinByExtermination = true;
                     
-                    Loader.modLogger?.LogInfo($"[Conquest-Map] RulesGameMode stamped as ID: {(int)gameState.Settings.RulesGameMode}");
+                    Loader.modLogger?.LogInfo($"[Conquest-Map] RulesGameMode stamped as ID: {(int)state.Settings.RulesGameMode}");
 
                     UI_2.IsConquestSelected = false;
                     Loader.modLogger?.LogInfo($"[Conquest-Map] Flag IsConquestSelected is set {UI_2.IsConquestSelected}");               
                 } 
-                else if (isReign)
+                else if (isReign || GameManager.PreliminaryGameSettings.RulesGameMode == EnumCache<GameMode>.GetType("reign"))
                 {
-                    gameState.Settings.RulesGameMode = EnumCache<GameMode>.GetType("reign");
-                    gameState.Settings.rules.WinByCapital = true;
+                    state.Settings.RulesGameMode = EnumCache<GameMode>.GetType("reign");
+                    state.Settings.rules.WinByCapital = true;
                     
-                    Loader.modLogger?.LogInfo($"[Conquest-Map] RulesGameMode stamped as ID: {(int)gameState.Settings.RulesGameMode}");
+                    Loader.modLogger?.LogInfo($"[Conquest-Map] RulesGameMode stamped as ID: {(int)state.Settings.RulesGameMode}");
 
                     UI_2.IsReignSelected = false;
                     Loader.modLogger?.LogInfo($"[Conquest-Map] Flag IsReignSelected is set {UI_2.IsReignSelected}");
@@ -2093,7 +2093,7 @@ namespace Conquest
         {
             try
             {
-                Loader.modLogger?.LogInfo("[Conquest-Popup] CaptureCityReaction started.");
+                //Loader.modLogger?.LogInfo("[Conquest-Popup] CaptureCityReaction started.");
 
                 if (GameManager.GameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
                     && GameManager.GameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
@@ -2176,7 +2176,7 @@ namespace Conquest
         {
             try
             {
-                Loader.modLogger?.LogInfo("[Conquest-Popup] ExecutePopupLogic started.");
+                //Loader.modLogger?.LogInfo("[Conquest-Popup] ExecutePopupLogic started.");
 
                 string? type = "itadel";
                 if (tile.improvement.type == ImprovementData.Type.Ruin)

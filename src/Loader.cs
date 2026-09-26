@@ -4,8 +4,6 @@ using PolytopiaBackendBase.Game;
 using Il2CppInterop.Runtime.Injection;
 using Polytopia.Data;
 using PolyMod;
-using Newtonsoft.Json.Linq;
-using PolyMod.Json;
 
 namespace PolyMode
 {
@@ -31,18 +29,22 @@ namespace PolyMode
 
             // 載入所有 Harmony 補丁
             Harmony.CreateAndPatchAll(typeof(Loader));
-            Harmony.CreateAndPatchAll(typeof(UI_2));
             Harmony.CreateAndPatchAll(typeof(City));
             Harmony.CreateAndPatchAll(typeof(MapAnalysis));
+
+            Harmony.CreateAndPatchAll(typeof(Conquest.Main));
+            Harmony.CreateAndPatchAll(typeof(Conquest.UI_2));
+            Harmony.CreateAndPatchAll(typeof(Conquest.AI_2));
+            Harmony.CreateAndPatchAll(typeof(Rush.Main));
+            Harmony.CreateAndPatchAll(typeof(Rush.UI_2));
+            Harmony.CreateAndPatchAll(typeof(Rush.AI_2));
 
             Harmony.CreateAndPatchAll(typeof(CitadelOverlay));
             Harmony.CreateAndPatchAll(typeof(OverlayPatches));
 
-            Harmony.CreateAndPatchAll(typeof(Conquest.Main));
-            Harmony.CreateAndPatchAll(typeof(Conquest.AI_2));
-
             RegisterCustomGameMode("conquest");
             RegisterCustomGameMode("reign");
+            RegisterCustomGameMode("rush");
 
             PolyMod.Loader.AddPatchDataType("cityReward", typeof(CityReward));
             PolyMod.Loader.AddPatchDataType("opinion", typeof(OpinionManager.Type));

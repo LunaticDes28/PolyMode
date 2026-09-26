@@ -26,6 +26,24 @@
     "gamemode_reign_win_no_opponents": {
         "English": "No opponents left"
     },
+    "gamemode_rush": {
+        "English": "Rush"
+    },
+    "gamemode_rush_description": {
+        "English": "Rush toward the throne of the Square. Become the king before everyone else."
+    },
+    "gamemode_rush_loss": {
+        "English": "Your were crowned the king."
+    },
+    "gamemode_rush_win": {
+        "English": "You suck!"
+    },
+    "gamestatus_stars": {
+        "English": "{0} stars"
+    },
+    "gamestatus_star": {
+        "English": "{0} star"
+    },
     "improvement_citadel": {
 		"English": "Citadel"
 	},
