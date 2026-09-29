@@ -220,6 +220,10 @@ namespace Conquest
         {
             if (gameState == null || tileData == null || player == null || improvementData == null) return;
 
+            if (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                return;
+
             if (improvementData.type != EnumCache<ImprovementData.Type>.GetType("citadel")) return;
 
             try
@@ -587,7 +591,180 @@ namespace Conquest
         // =========================================================================
         // C. Destroy
         // =========================================================================
+        // Throttle: one destroy attempt per player per N turns
+        static readonly Dictionary<byte, int> lastCitadelDestroyTurn = new Dictionary<byte, int>();
+        const int CitadelDestroyCooldownTurns = 4;
+        const int MinCityLevelForCitadelDestroy = 4;
+        const int MinCurrencyForCitadelDestroy = 40;
+
         [HarmonyPostfix]
+        [HarmonyPatch(typeof(AI), nameof(AI.GetTileCommands))]
+        private static void GetTileCommands_FreeCitadelCorner(
+            GameState gameState,
+            PlayerState player,
+            CommandType specificCommand,
+            ref CommandBase __result)
+        {
+            try
+            {
+                if (gameState?.Settings == null || player == null || !player.AutoPlay)
+                    return;
+
+                if (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                    && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                    return;
+
+                // Only when AI is looking for any command or Destroy
+                if (specificCommand != CommandType.None && specificCommand != CommandType.Destroy)
+                    return;
+
+                // Don't steal a high-priority command if vanilla already picked something important
+                if (__result != null)
+                {
+                    var t = __result.GetCommandType();
+                    if (t == CommandType.Attack || t == CommandType.Train || t == CommandType.Research)
+                        return;
+                }
+
+                if (player.currency < MinCurrencyForCitadelDestroy)
+                    return;
+
+                if (lastCitadelDestroyTurn.TryGetValue(player.Id, out int last)
+                    && (int)gameState.CurrentTurn - last < CitadelDestroyCooldownTurns)
+                    return;
+
+                GetCitadelCache(gameState, player);
+                if (cityCitadelCornerCache.Count == 0)
+                    return;
+
+                var citadelType = EnumCache<ImprovementData.Type>.GetType("citadel");
+                DestroyCommand? best = null;
+
+                foreach (var kv in cityCitadelCornerCache)
+                {
+                    TileData city = gameState.Map.GetTile(kv.Key);
+                    TileData corner = kv.Value;
+                    if (city?.improvement == null || corner == null)
+                        continue;
+                    if (city.owner != player.Id)
+                        continue;
+                    if (city.improvement.level < MinCityLevelForCitadelDestroy)
+                        continue;
+
+                    // Corner must be ours and blocked by a replaceable improvement
+                    if (corner.owner != player.Id)
+                        continue;
+                    if (corner.improvement == null)
+                        continue; // already empty — build path can use it
+
+                    var imp = corner.improvement.type;
+                    if (imp == ImprovementData.Type.City)
+                        continue;
+                    if (imp == citadelType)
+                        continue;
+                    if (imp == ImprovementData.Type.LightHouse)
+                        continue;
+                    try
+                    {
+                        if (imp.IsMonument())
+                            continue;
+                    }
+                    catch { }
+
+                    // Optional: don't clear high-pop producers if city is about to level
+                    // (keep minimal — skip markets / high level)
+                    if (imp == ImprovementData.Type.Market && corner.improvement.level > 2)
+                        continue;
+
+                    // Enemy unit on tile — skip
+                    if (corner.unit != null && corner.unit.owner != player.Id)
+                        continue;
+
+                    var destroy = new DestroyCommand(player.Id, corner.coordinates);
+                    if (!destroy.IsValid(gameState))
+                        continue;
+
+                    best = destroy;
+                    break; // first valid corner is enough
+                }
+
+                if (best == null)
+                    return;
+
+                __result = best;
+                lastCitadelDestroyTurn[player.Id] = (int)gameState.CurrentTurn;
+                Loader.modLogger?.LogInfo(
+                    $"[Conquest-AI] Free citadel corner destroy @ {best.Coordinates} p={player.Id} t={gameState.CurrentTurn}");
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest-AI] FreeCitadelCorner: {ex.Message}");
+            }
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(DestroyCommand), nameof(DestroyCommand.Execute))]
+        static void DestroyCommand_CitadelCooldown(DestroyCommand __instance, GameState state)
+        {
+            if (state == null || __instance == null) return;
+            lastCitadelDestroyTurn[__instance.PlayerId] = (int)state.CurrentTurn;
+        }
+
+        static DestroyCommand? TryFindCitadelCornerDestroy(GameState gameState, PlayerState player)
+        {
+            if (player.currency < MinCurrencyForCitadelDestroy)
+                return null;
+
+            if (lastCitadelDestroyTurn.TryGetValue(player.Id, out int last)
+                && (int)gameState.CurrentTurn - last < CitadelDestroyCooldownTurns)
+                return null;
+
+            GetCitadelCache(gameState, player);
+            if (cityCitadelCornerCache.Count == 0)
+                return null;
+
+            var citadelType = EnumCache<ImprovementData.Type>.GetType("citadel");
+            DestroyCommand? best = null;
+            int bestUnclaimed = -1;
+
+            foreach (var kv in cityCitadelCornerCache)
+            {
+                TileData city = gameState.Map.GetTile(kv.Key);
+                TileData corner = kv.Value;
+                if (city?.improvement == null || corner == null) continue;
+                if (city.owner != player.Id) continue;
+                if (city.improvement.level < MinCityLevelForCitadelDestroy) continue;
+                if (city.improvement.type != ImprovementData.Type.City) continue; // skip citadel-as-city tiles
+
+                if (corner.owner != player.Id) continue;
+                if (corner.improvement == null) continue;
+
+                var imp = corner.improvement.type;
+                if (imp == ImprovementData.Type.City || imp == citadelType) continue;
+                if (imp == ImprovementData.Type.LightHouse) continue;
+                try { if (imp.IsMonument()) continue; } catch { }
+                if (imp == ImprovementData.Type.Market && corner.improvement.level > 2) continue;
+                if (corner.unit != null && corner.unit.owner != player.Id) continue;
+
+                // Only free corners that still expand somewhere
+                int border = Math.Max(1, (int)city.improvement.borderSize);
+                int unclaimed = CountUnclaimedInRadius(gameState, corner.coordinates, border);
+                if (unclaimed < 2) continue;
+
+                var destroy = new DestroyCommand(player.Id, corner.coordinates);
+                if (!destroy.IsValid(gameState)) continue;
+
+                if (unclaimed > bestUnclaimed)
+                {
+                    bestUnclaimed = unclaimed;
+                    best = destroy;
+                }
+            }
+
+            return best;
+        }
+
+        /*[HarmonyPostfix]
         [HarmonyPatch(typeof(AI), nameof(AI.GetTileCommands))]
         private static void GetTileCommands_DestroyCmd(
             GameState gameState,
@@ -755,12 +932,52 @@ namespace Conquest
             {
                 Loader.modLogger?.LogError($"[Conquest-AI] GetTileCommands_DestroyCmd: {ex}");
             }
-        }
+        }*/
 
         // =========================================================================
         // D. Military
         // =========================================================================
-        /*[HarmonyPostfix]
+        /*[HarmonyPrefix]
+        [HarmonyPatch(typeof(AI), nameof(AI.AddUnitActionOptions))]
+        private static bool AddUnitActionOptions_Rider(
+            GameState gameState, 
+            PlayerState player, 
+            UnitState unit, 
+            UnitData unitData, 
+            TileData tile, 
+            float currentSituationScore, 
+            Il2CppSystem.Collections.Generic.List<AI.ScoredCommand> commands)
+        {
+            try
+            {
+                if (unit.type == UnitData.Type.Rider && unit.health <= unitData.health * 0.8)
+                {
+                    foreach (CommandBase commandBase in CommandUtils.GetUnitActions(gameState, player, tile, false))
+                    {
+                        if (commandBase.GetCommandType() == CommandType.Recover)
+                        {
+                            commands.Add(new AI.ScoredCommand
+                            {
+                                command = commandBase,
+                                score = currentSituationScore + (float)ActionUtils.GetHealAmount(gameState, tile) * 0.1f + 10
+                            });
+                        }
+                    }
+                    return true;
+                }
+                else
+                {
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest-AI] AddUnitActionOptions: {ex}");
+                return true;
+            }
+        }*/
+
+        [HarmonyPostfix]
         [HarmonyPatch(typeof(PathFinder), nameof(PathFinder.GetMoveOptions))]
         private static void GetMoveOptions_Combined(
             GameState gameState,
@@ -774,12 +991,6 @@ namespace Conquest
             try
             {
                 if (gameState?.Settings == null || unit == null || __result == null) return;
-
-                var mode = gameState.Settings.RulesGameMode;
-                if (mode != EnumCache<GameMode>.GetType("conquest") && mode != EnumCache<GameMode>.GetType("reign"))
-                {
-                    return;
-                }
 
                 if (!gameState.TryGetPlayer(unit.owner, out PlayerState player) || !player.AutoPlay)
                 {
@@ -847,21 +1058,14 @@ namespace Conquest
                 }
 
                 // -----------------------------------------------------------------
-                // 2) Escape
+                // 2) Rider
                 // -----------------------------------------------------------------
-                if (unit.UnitData.HasAbility(UnitAbility.Type.Escape))
-                //if (unit.type == UnitData.Type.Rider)
+                if (unit.UnitData.HasAbility(UnitAbility.Type.Escape) && unit.attacked)
                 {
-                    //Loader.modLogger?.LogInfo($"[Conquest-AI] Escape detected");
-                    if (!unit.attacked)
-                    {
-                        goto notAttacked;
-                    }
-
                     //Loader.modLogger?.LogInfo($"[Conquest-AI] Escape has attacked");
                     List<WorldCoordinates> enemyPositions = MapAnalysis.CollectEnemyPositions(gameState, start, 7, player.Id);
-                    if (enemyPositions.Count == 0 || __result.Count == 0) return;
-                    //Loader.modLogger?.LogInfo($"[Conquest-AI] Enemy count for escape not null");
+                    //if (enemyPositions.Count == 0 || __result.Count == 0) return;
+                    //Loader.modLogger?.LogInfo($"[Conquest-AI] Enemy count for escape not null. Finding retreat location.");
 
                     WorldCoordinates bestTile = WorldCoordinates.NULL_COORDINATES;
                     int bestMinDist = int.MinValue;
@@ -904,14 +1108,13 @@ namespace Conquest
                     }
                 }
 
-                notAttacked:
                 return;
             }
             catch (Exception ex)
             {
                 Loader.modLogger?.LogError($"[Conquest-AI] GetMoveOptions_Combined: {ex}");
             }
-        }*/
+        }
 
         // =========================================================================
         // Helpers — cache
@@ -1092,6 +1295,35 @@ namespace Conquest
         // -------------------------------------------------------------------------
         // 1) Reweight before vanilla picks best command
         // -------------------------------------------------------------------------
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(AI), nameof(AI.GetImprovementScore))]
+        private static void GetImprovementScore_GrowForest(
+            GameState gameState,
+            ImprovementData improvementData,
+            TileData tileData,
+            PlayerState player,
+            ref float __result)
+        {
+            if (improvementData == null || tileData == null || player == null)
+                return;
+            if (improvementData.type != ImprovementData.Type.GrowForest)
+                return;
+            if (__result > 1f)
+                return; // already viable
+
+            // Only empty owned field (typical grow target)
+            if (tileData.owner != player.Id || tileData.improvement != null)
+                return;
+            if (tileData.terrain != TerrainData.Type.Field)
+                return;
+
+            // Optional: skip if tile already good for farm/windmill
+            // ...
+
+            // Enough to pass vanilla "num > 1" and compete a bit
+            __result = 16f; // tune 15–20
+        }
+
         [HarmonyPrefix]
         [HarmonyPatch(typeof(AI), nameof(AI.PickBestPossibleCommand))]
         private static bool PickBestPossibleCommand_Budget(
@@ -1108,17 +1340,31 @@ namespace Conquest
                     return true;
 
                 var mode = gameState.Settings.RulesGameMode;
-                if (mode != EnumCache<GameMode>.GetType("conquest")
-                    && mode != EnumCache<GameMode>.GetType("reign")
-                    && mode != EnumCache<GameMode>.GetType("rush"))
+                if (mode == GameMode.Perfection
+                    || mode == GameMode.Domination
+                    || mode == GameMode.Glory
+                    || mode == GameMode.Might
+                    || mode == GameMode.Sandbox
+                    || mode == GameMode.Tutorial)
                 {
                     return true;
                 }
 
                 int count = possibleCommands.Count;
                 var managed = new List<AI.ScoredCommand>(count);
+            
                 for (int i = 0; i < count; i++)
+                {
+                    /*if (possibleCommands[i].command.GetCommandType() == CommandType.Build && possibleCommands[i].command.Cast<BuildCommand>().Type.IsTemple())
+                    {
+                        Loader.modLogger?.LogInfo($"[Conquest] Denied temple cmd");
+                    }
+                    else 
+                    {
+                        managed.Add(possibleCommands[i]);
+                    }*/
                     managed.Add(possibleCommands[i]);
+                }
 
                 // After copying to managed, before top-N:
                 for (int i = 0; i < managed.Count; i++)
@@ -1132,18 +1378,37 @@ namespace Conquest
                         var bc = cmd.Cast<BuildCommand>();
                         if (bc != null)
                         {
-                            try
+                            if (bc.Type.IsTemple())
                             {
-                                if (bc.Type.IsTemple())
-                                {
-                                    sc.score = 0f; // or very negative
-                                    managed[i] = sc;
-                                }
+                                //Loader.modLogger?.LogInfo($"[Conquest] Temple suppressed");
+                                sc.score = 0f; // or very negative
+                                managed[i] = sc;
                             }
-                            catch { }
+
+                            /*if (bc.Type == ImprovementData.Type.GrowForest)
+                            {
+                                Loader.modLogger?.LogInfo($"[Conquest] Grow Forest raised");
+                                sc.score = 200f;
+                                managed[i] = sc;
+                            }*/
                         }
                     }
                 }
+
+                if (gameState.Settings.RulesGameMode == EnumCache<GameMode>.GetType("conquest")
+                        || gameState.Settings.RulesGameMode == EnumCache<GameMode>.GetType("reign"))
+                    {
+                        var destroy = TryFindCitadelCornerDestroy(gameState, player);
+                        if (destroy != null)
+                        {
+                            managed.Add(new AI.ScoredCommand
+                            {
+                                command = destroy,
+                                score = 180f // high enough to beat weak improves; tune 150–250
+                            });
+                        }
+                    }
+
                 // Sort by vanilla score first — only reweight top N
                 managed.Sort((a, b) => b.score.CompareTo(a.score));
                 int reweightCount = Math.Min(ReweightTopN, managed.Count);
@@ -1154,8 +1419,12 @@ namespace Conquest
                 for (int i = 0; i < reweightCount; i++)
                 {
                     CommandBase cmd = managed[i].command;
-                    if (cmd == null) continue;
+                    if (cmd.GetCommandType() == CommandType.Build)
+                    {
+                        Loader.modLogger?.LogInfo($"[Conquest] Cmd {i} is {cmd?.TryCast<BuildCommand>()?.Type.GetDisplayName()}");
+                    }
 
+                    if (cmd == null) continue;
                     switch (Classify(gameState, cmd))
                     {
                         case CommandPool.Train: hasTrain = true; break;
@@ -1166,9 +1435,9 @@ namespace Conquest
                     }
                 }
 
-                float wTrain = hasTrain ? 0.35f : 0f;
+                float wTrain = hasTrain ? 0.30f : 0f;
                 float wResearch = hasResearch ? 0.20f : 0f;
-                float wImprove = hasImprove ? 0.30f : 0f;
+                float wImprove = hasImprove ? 0.35f : 0f;
                 float wRoad = hasRoad ? 0.10f : 0f;
                 float wDiplo = hasDiplo ? 0.05f : 0f;
 
@@ -1214,16 +1483,16 @@ namespace Conquest
                 else
                 {
                     float frac = currency >= 20 ? 0.10f : 0.0f;
-                    if (gameState.Settings.RulesGameMode == EnumCache<GameMode>.GetType("rush"))
+                    if (gameState.Settings.RulesGameMode == EnumCache<GameMode>.GetType("rusha"))
                     {
                         frac = (float)(frac + Math.Pow(gameState.CurrentTurn / Math.MaxMagnitude(1, gameState.Settings.rules.TurnLimit - 1), 10));
-                        Loader.modLogger?.LogInfo($"[Rush-Budget] Reserved fraction is {frac}.");
+                        //Loader.modLogger?.LogInfo($"[Rush-Budget] Reserved fraction is {frac}.");
                     }
 
                     reserve = Math.Max(0, (int)(currency * frac));
-                    if (AnyOwnedCitySieged(gameState, player) && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("rush"))
+                    if (AnyOwnedCitySieged(gameState, player) && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("rusha"))
                         reserve = Math.Min(reserve, Math.Max(0, currency / 10));
-                    Loader.modLogger?.LogInfo($"[Rush-Budget] Reserved {reserve} stars.");
+                    //Loader.modLogger?.LogInfo($"[Rush-Budget] Reserved {reserve} stars.");
                 }
 
                 int spendable = Math.Max(0, currency - reserve);
@@ -1302,7 +1571,7 @@ namespace Conquest
                                     if (tile?.owner == player.Id)
                                     {
                                         mult *= (tile != null && CitySiegedCached(gameState, player, tile, siegeCache))
-                                            ? 50f : 0f;
+                                            ? 100f : 0f;
                                     }
                                 }
                                 else if (bc.Type == ImprovementData.Type.BurnForest)
@@ -1374,9 +1643,9 @@ namespace Conquest
                                         }
                                         catch { }
                                     }
-                                    mult *= (forSecondary || forFarm) ? 0f : 2f;
+                                    mult *= (forSecondary || forFarm) ? 0f : 1f;
                                     if (mult > 0f && !inTop)
-                                        mult *= 2f; // optional: help mid-list grows a bit
+                                        mult *= 1.5f; // optional: help mid-list grows a bit
                                 }
                                 else if (bc.Type == ImprovementData.Type.Port)
                                 {

@@ -5,6 +5,8 @@ using UnityEngine.UI;
 using Polytopia.Data;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using PolyMode;
+using PolytopiaBackendBase;
+using PolytopiaBackendBase.Game.BindingModels;
 
 namespace Rush
 {
@@ -13,45 +15,47 @@ namespace Rush
         // =========================================================================
         // A. GameMode Settings
         // =========================================================================
-        [HarmonyPostfix]
-        [HarmonyPatch(typeof(MapGenerator), nameof(MapGenerator.Generate))]
-        private static void Generate_SetGamemode(GameState state, MapGeneratorSettings settings)
-        {
-            try
-            {
-                bool isRush = UI_2.IsRushSelected;
+[HarmonyPostfix]
+[HarmonyPatch(typeof(MapGenerator), nameof(MapGenerator.Generate))]
+private static void Generate_SetGamemode(GameState state, MapGeneratorSettings settings)
+{
+    try
+    {
+        if (GameManager.PreliminaryGameSettings.GameType == GameType.Matchmaking
+            || GameManager.PreliminaryGameSettings.GameType == GameType.Multiplayer
+            || GameManager.PreliminaryGameSettings.GameType == GameType.PassAndPlay)
+            return;
 
-                // Loader.modLogger?.LogInfo("[Rush-Map] Rush Mode selected!");
-                if (GameManager.PreliminaryGameSettings.GameType == GameType.Matchmaking || GameManager.PreliminaryGameSettings.GameType == GameType.Multiplayer || GameManager.PreliminaryGameSettings.GameType == GameType.PassAndPlay) return;
+        var ra = EnumCache<GameMode>.GetType("rusha");
+        var rb = EnumCache<GameMode>.GetType("rushb");
+        var prelim = GameManager.PreliminaryGameSettings.RulesGameMode;
 
-                // Pseudo GameSettings in GameState
-                if (isRush || GameManager.PreliminaryGameSettings.RulesGameMode == EnumCache<GameMode>.GetType("rush")) 
-                {
-                    Loader.modLogger?.LogInfo($"[Rush-Map] At least we detected sth");
+        // Setup always leaves rusha; sticky picks Star vs Army at map gen
+        bool isRushSetup = prelim == ra || prelim == rb
+            || UI_2.RushGoalId == 1 || UI_2.RushGoalId == 2;
 
-                    state.Settings.RulesGameMode = EnumCache<GameMode>.GetType("rush");
-                    Loader.modLogger?.LogInfo($"[Rush-Map] RulesGameMode stamped as ID: {(int)state.Settings.RulesGameMode}");
+        if (!isRushSetup) return;
 
-                    if (GameManager.PreliminaryGameSettings.rules.ScoreLimit == 0)
-                    {
-                        UI_2.RushTurnLimit = 30;
-                    }
-                    else
-                    {
-                        UI_2.RushTurnLimit = GameManager.PreliminaryGameSettings.rules.ScoreLimit;
-                    }
-                    state.Settings.rules.TurnLimit = UI_2.RushTurnLimit;
-                    Loader.modLogger?.LogInfo($"[Rush-Map] TurnLimit is {state.Settings.rules.TurnLimit}");
+        var mode = (UI_2.RushGoalId == 2) ? rb : ra;
 
-                    UI_2.IsRushSelected = false;
-                    Loader.modLogger?.LogInfo($"[Rush-Map] Flag IsRushSelected is set {UI_2.IsRushSelected}");               
-                } 
-            }
-            catch (Exception ex)
-            {
-                Loader.modLogger?.LogError($"[Rush-Map] GameStateUtils error: {ex.Message}");
-            }
-        }
+        state.Settings.RulesGameMode = mode;
+        GameManager.PreliminaryGameSettings.RulesGameMode = mode;
+
+        if (GameManager.PreliminaryGameSettings.rules.ScoreLimit == 0)
+            UI_2.RushTurnLimit = 30;
+        else
+            UI_2.RushTurnLimit = GameManager.PreliminaryGameSettings.rules.ScoreLimit;
+
+        state.Settings.rules.TurnLimit = UI_2.RushTurnLimit;
+
+        Loader.modLogger?.LogInfo(
+            $"[Rush-Map] Commit goalId={UI_2.RushGoalId} mode={mode} TurnLimit={state.Settings.rules.TurnLimit}");
+    }
+    catch (Exception ex)
+    {
+        Loader.modLogger?.LogError($"[Rush-Map] Generate_SetGamemode: {ex.Message}");
+    }
+}
 
         /*[HarmonyPostfix]
         [HarmonyPatch(typeof(GameManager), nameof(GameManager.LoadLevel))]
@@ -92,6 +96,24 @@ namespace Rush
             }
         }*/
 
+        /// <summary>
+        /// Lobby settings: overwrite GameMode with sticky Goal (rusha/rushb).
+        /// </summary>
+        [HarmonyPrefix]
+        [HarmonyPatch(typeof(BackendAdapter), nameof(BackendAdapter.CreateLobby))]
+        static void CreateLobby_CommitRush(CreateLobbyBindingModel model)
+        {
+            if (model == null) return;
+            if (UI_2.RushGoalId != 1 && UI_2.RushGoalId != 2) return;
+
+            model.GameMode = UI_2.GetCommittedRushMode(); // rusha or rushb
+            if (UI_2.RushTurnLimit > 0)
+                model.ScoreLimit = UI_2.RushTurnLimit;
+
+            Loader.modLogger?.LogInfo(
+                $"[Rush-Lobby] CreateLobby → GameMode={model.GameMode} ScoreLimit={model.ScoreLimit} goalId={UI_2.RushGoalId}");
+        }
+
         [HarmonyPostfix]
         [HarmonyPatch(typeof(GameSettings), nameof(GameSettings.ApplyLobbySettings))]
         private static void ApplyLobbySettings_Rush(GameSettings __instance, LobbyGameViewModel lobbyGameViewModel)
@@ -104,6 +126,12 @@ namespace Rush
                 __instance.MapSize = lobbyGameViewModel.MapSize;
                 __instance.mapPreset = lobbyGameViewModel.MapPreset;
                 __instance.BaseGameMode = lobbyGameViewModel.GameMode;
+                var ra = EnumCache<GameMode>.GetType("rusha");
+                var rb = EnumCache<GameMode>.GetType("rushb");
+                if (lobbyGameViewModel.GameMode == ra || lobbyGameViewModel.GameMode == rb)
+                {
+                    __instance.RulesGameMode = lobbyGameViewModel.GameMode;
+                }
                 if (lobbyGameViewModel.ScoreLimit >= 500)
                 {
                     __instance.rules.ScoreLimit = lobbyGameViewModel.ScoreLimit;
@@ -143,7 +171,8 @@ namespace Rush
                 PlayerState topWinner = playersSortedByRank[0];
                 if (topWinner == null) return;
 
-                if (__instance.Settings.RulesGameMode == EnumCache<GameMode>.GetType("rush"))
+                if (__instance.Settings.RulesGameMode == EnumCache<GameMode>.GetType("rusha")
+                    || __instance.Settings.RulesGameMode == EnumCache<GameMode>.GetType("rushb"))
                 {
                     int num = GameStateUtils.CountAlivePlayers(__instance); 
 

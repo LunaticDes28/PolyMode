@@ -5,6 +5,7 @@ using UnityEngine.UI;
 using Polytopia.Data;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using PolyMode;
+using Cpp2IL.Core.Extensions;
 
 namespace Conquest
 {
@@ -84,7 +85,7 @@ namespace Conquest
                 {
                     IsConquestSelected = true;
                     IsReignSelected = false;
-                    __instance.view.SetShowGameModeDescriptionText("gamemode.conquest.description");
+                    //__instance.view.SetShowGameModeDescriptionText("gamemode.conquest.description");
                     Loader.modLogger?.LogInfo("[Conquest-UI] Conquest mode selected (TRUE).");
                 }
                 else
@@ -92,14 +93,14 @@ namespace Conquest
                 {
                     IsConquestSelected = false;
                     IsReignSelected = true;
-                    __instance.view.SetShowGameModeDescriptionText("gamemode.reign.description");
+                    //__instance.view.SetShowGameModeDescriptionText("gamemode.reign.description");
                     Loader.modLogger?.LogInfo($"[Conquest-UI] Reign mode selected (True).");
                 }
                 else
                 {
                     IsConquestSelected = false;
                     IsReignSelected = false;
-                    __instance.view.SetShowGameModeDescriptionText($"gamemode.{selectedText.ToLowerInvariant()}.description");
+                    //__instance.view.SetShowGameModeDescriptionText($"gamemode.{selectedText.ToLowerInvariant()}.description");
                     Loader.modLogger?.LogInfo($"[Conquest-UI] Mode changed to: {selectedText} (FALSE).");
                 }
 

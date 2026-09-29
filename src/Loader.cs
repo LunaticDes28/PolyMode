@@ -44,7 +44,8 @@ namespace PolyMode
 
             RegisterCustomGameMode("conquest");
             RegisterCustomGameMode("reign");
-            RegisterCustomGameMode("rush");
+            RegisterCustomGameMode("rusha");
+            RegisterCustomGameMode("rushb");
 
             PolyMod.Loader.AddPatchDataType("cityReward", typeof(CityReward));
             PolyMod.Loader.AddPatchDataType("opinion", typeof(OpinionManager.Type));

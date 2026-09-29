@@ -104,6 +104,7 @@ StyleCopReport.xml
 *.csproj
 *.sln
 *.txt
+*.editorconfig
 *.gitignore
 
 # Chutzpah Test files

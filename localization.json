@@ -26,23 +26,47 @@
     "gamemode_reign_win_no_opponents": {
         "English": "No opponents left"
     },
-    "gamemode_rush": {
-        "English": "Rush"
+    "gamemode_rusha": {
+        "English": "Rush (Star)"
     },
-    "gamemode_rush_description": {
+    "gamemode_rusha_description": {
         "English": "Rush toward the throne of the Square. Become the king before everyone else."
     },
-    "gamemode_rush_loss": {
-        "English": "Your were crowned the king."
+    "gamemode_rusha_loss": {
+        "English": "You suck."
     },
-    "gamemode_rush_win": {
-        "English": "You suck!"
+    "gamemode_rusha_win": {
+        "English": "Your were crowned the king!"
     },
     "gamestatus_stars": {
         "English": "{0} stars"
     },
     "gamestatus_star": {
         "English": "{0} star"
+    },
+    "gamemode_rushb": {
+        "English": "Rush (Army)"
+    },
+    "gamemode_rushb_description": {
+        "English": "Rush toward the throne of the Square. Become the king before everyone else."
+    },
+    "gamemode_rushb_loss": {
+        "English": "You suck."
+    },
+    "gamemode_rushb_win": {
+        "English": "Your were crowned the king!"
+    },
+    "gamestatus_units": {
+        "English": "{0} units"
+    },
+    "gamestatus_unit": {
+        "English": "{0} unit"
+    },
+    "gamestatus_kills": {
+        "English": "{0} kills"
+    },
+    "gamestatus_kill": {
+        "English": "{0} kill"
     },
     "improvement_citadel": {
 		"English": "Citadel"

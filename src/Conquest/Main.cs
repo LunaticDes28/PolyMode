@@ -871,6 +871,7 @@ namespace Conquest
                 }
                 ActionUtils.RuleArea(state, player, tile, true);
                 ActionUtils.ExploreFromTile(state, player, tile, 2, true);
+                InvalidateCityCaches();
                 Loader.modLogger?.LogInfo($"[Conquest-Match] City for P{player.Id} at {tile.coordinates}");
             }
             catch (Exception ex)
@@ -1054,7 +1055,7 @@ namespace Conquest
                         }
 
                         ReactionUtils.UpdateSurroundingBordersAndTransportPaths(playerState.Id, tile);
-                        // ActionUtils.RuleArea(gameState, playerState, tile, false);
+                        InvalidateCityCaches();
                     }
                 }
             }
@@ -1145,6 +1146,7 @@ namespace Conquest
                         }
                     }
                     ReactionUtils.UpdateSurroundingBordersAndTransportPaths(cityTile.owner, tile);
+                    InvalidateCityCaches();
                 }
                 
                 return true;
@@ -1279,7 +1281,6 @@ namespace Conquest
                 if (cityTile.improvement == null
                     || cityTile.improvement.type != ImprovementData.Type.City)
                 {
-                    // Ruin / citadel / cleared → empty, skip vanilla
                     __result = new Il2CppSystem.Collections.Generic.List<TileData>();
                     return false;
                 }
@@ -1301,6 +1302,13 @@ namespace Conquest
                     cityTile.rulingCityCoordinates == WorldCoordinates.NULL_COORDINATES
                         ? cityTile.coordinates
                         : cityTile.rulingCityCoordinates;
+
+                long key = CityKey(centerCoords);
+                if (CityAreaCache.TryGetValue(key, out var cached) && cached != null)
+                {
+                    __result = cached;
+                    return false;
+                }
 
                 TileData cityCenter = gameState.Map.GetTile(centerCoords);
                 if (cityCenter == null)
@@ -1338,6 +1346,11 @@ namespace Conquest
                         }
                     }
                 }
+
+                // Don't cache incomplete areas (e.g. init before RuleArea)
+                bool looksIncomplete = list.Count <= 1;
+                if (!looksIncomplete)
+                    CityAreaCache[key] = list;
 
                 __result = list;
                 return false;
@@ -1407,24 +1420,52 @@ namespace Conquest
             }
         }
 
+        static readonly Dictionary<long, Il2CppSystem.Collections.Generic.List<TileData>> CityAreaCache = new();
+        static readonly Dictionary<long, int> CitadelCountCache = new();
+
+        static long CityKey(WorldCoordinates c) => ((long)c.X << 32) | (uint)c.Y;
+
+        public static void InvalidateCityCaches()
+        {
+            CityAreaCache.Clear();
+            CitadelCountCache.Clear();
+            AI_2.citadelCacheTurn = -1;
+        }
+
         public static int CountCityCitadel(GameState gameState, TileData tile)
         {
-            Il2CppSystem.Collections.Generic.List<TileData> cityArea = ActionUtils.GetCityAreaSorted(gameState, tile);
+            if (gameState?.Map == null || tile == null)
+                return 0;
+
+            WorldCoordinates center =
+                tile.rulingCityCoordinates != WorldCoordinates.NULL_COORDINATES
+                    ? tile.rulingCityCoordinates
+                    : tile.coordinates;
+
+            long key = CityKey(center);
+            if (CitadelCountCache.TryGetValue(key, out int cached))
+                return cached;
+
             int count = 0;
-            if (cityArea != null)
+            var citadelType = EnumCache<ImprovementData.Type>.GetType("citadel");
+
+            // Full map scan: reliable even when area BFS/cache is incomplete
+            for (int i = 0; i < gameState.Map.Tiles.Length; i++)
             {
-                foreach (TileData territoryTile in cityArea)
-                {
-                    if (territoryTile != null && territoryTile.improvement != null)
-                    {
-                        if (territoryTile.improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel"))
-                        {
-                            count++;
-                            // Loader.modLogger?.LogInfo($"Citadel count is {count} on tile {territoryTile.coordinates}");
-                        }
-                    }
-                }
-            }      
+                TileData t = gameState.Map.Tiles[i];
+                if (t?.improvement == null) continue;
+                if (t.improvement.type != citadelType) continue;
+
+                WorldCoordinates rule =
+                    t.rulingCityCoordinates != WorldCoordinates.NULL_COORDINATES
+                        ? t.rulingCityCoordinates
+                        : t.coordinates;
+
+                if (rule == center)
+                    count++;
+            }
+
+            CitadelCountCache[key] = count;
             return count;
         }
 
@@ -1436,31 +1477,31 @@ namespace Conquest
             
             if (gameState.Settings.MapSize  <= 11)
             {
-                cityLimit = 1;
-                capitalLimit = 1;
-            }
-            else
-            if (gameState.Settings.MapSize  <= 16)
-            {
                 cityLimit = 2;
                 capitalLimit = 2;
             }
             else
-            if (gameState.Settings.MapSize  <= 20)
+            if (gameState.Settings.MapSize  <= 16)
             {
                 cityLimit = 3;
                 capitalLimit = 3;
             }
             else
+            if (gameState.Settings.MapSize  <= 20)
             {
-                cityLimit = 6;
-                capitalLimit = 6;
+                cityLimit = 4;
+                capitalLimit = 4;
+            }
+            else
+            {
+                cityLimit = 7;
+                capitalLimit = 7;
             }
 
             if (gameState.Settings.mapPreset == MapPreset.Continents || gameState.Settings.mapPreset == MapPreset.Pangea)
             {
-                cityLimit = cityLimit > 3? cityLimit + 1 : cityLimit + 2;
-                capitalLimit = capitalLimit > 3? capitalLimit + 1 : capitalLimit + 2;
+                cityLimit = cityLimit > 4? cityLimit + 1 : cityLimit + 2;
+                capitalLimit = capitalLimit > 4? capitalLimit + 1 : capitalLimit + 2;
             }
 
             if (tile.terrain == TerrainData.Type.Mountain && !playerState.HasAbility(EnumCache<PlayerAbility.Type>.GetType("mountaincitadel"), gameState))
@@ -1796,8 +1837,8 @@ namespace Conquest
                     return;
                 };
 
-                float delayedTurn = Math.Max((float)state.CurrentTurn - 5, 0);
-                float adjustedCities = Math.Max((float)(playerState.cities - 1) * 2, 2);
+                float delayedTurn = Math.Max((float)state.CurrentTurn - 4, 0);
+                float adjustedCities = Math.Max((float)playerState.cities * 2, 2);
                 float num = Math.Max(4 + techData.cost, playerState.cities + delayedTurn * techData.cost);
                 num = (float)Math.Min(num, techData.cost * adjustedCities);
                 
@@ -1848,64 +1889,64 @@ namespace Conquest
         {
             if (cityTile?.improvement?.type != ImprovementData.Type.City) return;
 
-            // 1. Fetch original owner & population
-            int transferredPopulation = 0;
+            InvalidateCityCaches();
+
+            WorldCoordinates center = cityTile.coordinates;
             byte originalOwnerId = cityTile.owner;
             PlayerState originalOwner;
             gameState.TryGetPlayer(originalOwnerId, out originalOwner);
 
+            // 1. Population / city count
+            int transferredPopulation = 0;
             if (originalOwner != null)
             {
-                transferredPopulation = cityTile.improvement.population; 
+                transferredPopulation = cityTile.improvement.population;
 
                 if (originalOwner.cities > 0)
                 {
                     originalOwner.cities--;
-                    Loader.modLogger?.LogInfo($"[Conquest] Player {originalOwner.Id} lost a city. Total remaining: {originalOwner.cities}");
+                    Loader.modLogger?.LogInfo(
+                        $"[Conquest] Player {originalOwner.Id} lost a city. Total remaining: {originalOwner.cities}");
                 }
             }
 
-            // 2. Transfer population to nearest unsieged city (or capital)
+            // 2. Transfer population
             if (transferredPopulation > 0 && originalOwner != null)
             {
-                TileData? fleeCityTile = null;
-                int closestDistance = int.MaxValue;
-
-                for (int i = 0; i < gameState.Map.Tiles.Length; i++)
+                if (!isCityUpgrade)
                 {
-                    TileData tile = gameState.Map.Tiles[i];
-                    
-                    if (tile.HasImprovement(ImprovementData.Type.City) && tile.owner == originalOwnerId && tile.coordinates != cityTile.coordinates)
-                    {
-                        bool isSieged = false;
-                        
-                        if (tile.unit != null && tile.unit.owner != originalOwnerId)
-                        {
-                            isSieged = true;
-                        }
+                    TileData? fleeCityTile = null;
+                    int closestDistance = int.MaxValue;
 
-                        if (!isSieged)
+                    for (int i = 0; i < gameState.Map.Tiles.Length; i++)
+                    {
+                        TileData tile = gameState.Map.Tiles[i];
+                        if (!tile.HasImprovement(ImprovementData.Type.City)
+                            || tile.owner != originalOwnerId
+                            || tile.coordinates == cityTile.coordinates)
+                            continue;
+
+                        bool isSieged = tile.unit != null && tile.unit.owner != originalOwnerId;
+                        if (isSieged) continue;
+
+                        int distance = MapDataExtensions.ManhattanDistance(cityTile.coordinates, tile.coordinates);
+                        if (distance < closestDistance)
                         {
-                            int distance = MapDataExtensions.ManhattanDistance(cityTile.coordinates, tile.coordinates);
-                            if (distance < closestDistance)
-                            {
-                                closestDistance = distance;
-                                fleeCityTile = tile;
-                            }
+                            closestDistance = distance;
+                            fleeCityTile = tile;
                         }
                     }
-                }
-                if (isCityUpgrade == false)
-                {
+
                     if (fleeCityTile != null)
                     {
                         fleeCityTile.improvement.AddPopulation((short)transferredPopulation);
-                        Loader.modLogger?.LogInfo($"[Conquest] Transferred {transferredPopulation} populations from razed city to safe city at {fleeCityTile.coordinates}.");
-
+                        Loader.modLogger?.LogInfo(
+                            $"[Conquest] Transferred {transferredPopulation} populations from razed city to safe city at {fleeCityTile.coordinates}.");
                     }
                     else
                     {
-                        Loader.modLogger?.LogInfo($"[Conquest] No safe, un-sieged cities found for Player {originalOwnerId}. Population permanently lost.");
+                        Loader.modLogger?.LogInfo(
+                            $"[Conquest] No safe, un-sieged cities found for Player {originalOwnerId}. Population permanently lost.");
                     }
                 }
                 else
@@ -1915,78 +1956,94 @@ namespace Conquest
                     {
                         for (int j = 0; j < 3; j++)
                         {
-                            gameState.ActionStack.Add(new IncreasePopulationAction(playerState.Id, cityTile.coordinates, capital.coordinates, 60));
-                            //instance.AddSubAction(new IncreasePopulationAction(playerState.Id, cityTile.coordinates, capital.coordinates, 60));
+                            gameState.ActionStack.Add(
+                                new IncreasePopulationAction(playerState.Id, cityTile.coordinates, capital.coordinates, 60));
                         }
                         playerState.currency += 3;
-                        Loader.modLogger?.LogInfo($"[Conquest-Tech] Transferred 3 populations from abandoned city to capital at {capital.coordinates}.");
-
+                        Loader.modLogger?.LogInfo(
+                            $"[Conquest-Tech] Transferred 3 populations from abandoned city to capital at {capital.coordinates}.");
                     }
                     else
                     {
-                        Loader.modLogger?.LogInfo($"[Conquest-Tech] Capital not owned by Player {originalOwnerId}. Population permanently lost.");
+                        Loader.modLogger?.LogInfo(
+                            $"[Conquest-Tech] Capital not owned by Player {originalOwnerId}. Population permanently lost.");
                     }
                 }
             }
 
-            // 3. Rewards & Scores increment for attacker
+            // 3. Rewards for attacker
             int reward = Math.Min(15, cityTile.improvement.level * 2) + Math.Min(15, (int)gameState.CurrentTurn);
-            int score  = 100 + cityTile.improvement.level * 50;
+            int score = 100 + cityTile.improvement.level * 50;
             gameState.ActionStack.Add(new IncreaseScoreAction(playerState.Id, score, cityTile.coordinates, 50));
 
             if (playerState != null && !isCityUpgrade)
             {
                 playerState.Currency += reward;
-                Loader.modLogger?.LogInfo($"[Conquest] City destroyed by player {playerState.Id} (+{reward} stars & {score} scores)");
+                Loader.modLogger?.LogInfo(
+                    $"[Conquest] City destroyed by player {playerState.Id} (+{reward} stars & {score} scores)");
             }
 
-            // 4. Unrule city area & Score deduction for defender
-            Il2CppSystem.Collections.Generic.List<TileData> cityArea = ActionUtils.GetCityAreaSorted(gameState, cityTile);
-            if (cityArea != null)
-            {
-                for (int j = 0; j < cityArea.Count; j++)
-                {
-                    TileData territoryTile = cityArea[j];
-                    // Loader.modLogger?.LogInfo($"[Conquest] Unrule action for {territoryTile.coordinates}");
-                    if (territoryTile != null)
-                    {
-                        int num = ScoreSheet.tileValue;
-                        if (territoryTile.improvement != null && territoryTile.coordinates != cityTile.coordinates)
-                        {
-                            num += gameState.CalculateImprovementScore(territoryTile);
-                        }
-                        gameState.ActionStack.Add(new DecreaseScoreAction(territoryTile.owner, num));
+            // 4. Unrule ALL tiles of this city (connected + disconnected citadels)
+            var citadelType = EnumCache<ImprovementData.Type>.GetType("citadel");
+            var toClear = new List<TileData>();
 
-                        territoryTile.owner = 0;
-                        territoryTile.rulingCityCoordinates = WorldCoordinates.NULL_COORDINATES; 
-                        if (territoryTile != null && territoryTile.improvement != null && territoryTile.improvement.type != ImprovementData.Type.LightHouse)
-                        {
-                            territoryTile.improvement = null;
-                        }
-                    }
+            for (int i = 0; i < gameState.Map.Tiles.Length; i++)
+            {
+                TileData t = gameState.Map.Tiles[i];
+                if (t == null) continue;
+
+                bool isCenter = t.coordinates == center;
+                bool ruledByCity = t.rulingCityCoordinates == center;
+                bool orphanCitadel =
+                    t.improvement != null
+                    && t.improvement.type == citadelType
+                    && t.owner == originalOwnerId
+                    && (t.rulingCityCoordinates == center
+                        || t.rulingCityCoordinates == WorldCoordinates.NULL_COORDINATES);
+
+                if (isCenter || ruledByCity || orphanCitadel)
+                    toClear.Add(t);
+            }
+
+            for (int j = 0; j < toClear.Count; j++)
+            {
+                TileData territoryTile = toClear[j];
+                if (territoryTile == null) continue;
+
+                int num = ScoreSheet.tileValue;
+                if (territoryTile.improvement != null
+                    && territoryTile.coordinates != cityTile.coordinates)
+                {
+                    num += gameState.CalculateImprovementScore(territoryTile);
                 }
-            }
 
-            if (cityArea != null)
-            {
-                for (int i = cityArea.Count - 1; i >= 0; i--)
+                if (territoryTile.owner != 0)
+                    gameState.ActionStack.Add(new DecreaseScoreAction(territoryTile.owner, num));
+
+                // Strip improvements (keep lighthouse; city tile handled below)
+                if (territoryTile.coordinates != cityTile.coordinates
+                    && territoryTile.improvement != null
+                    && territoryTile.improvement.type != ImprovementData.Type.LightHouse)
                 {
-                    Tile instance2 = cityArea[i].GetInstance();
-                    if (instance2 != null)
-                    {
-                        instance2.StopFire();
-                        instance2.Render();
-                    }
+                    territoryTile.improvement = null;
+                }
+
+                territoryTile.owner = 0;
+                territoryTile.rulingCityCoordinates = WorldCoordinates.NULL_COORDINATES;
+
+                Tile instance = territoryTile.GetInstance();
+                if (instance != null)
+                {
+                    instance.StopFire();
+                    instance.Render();
                 }
             }
 
             if (playerState != null)
-            {
                 ReactionUtils.UpdateSurroundingBordersAndTransportPaths(playerState.Id, cityTile);
-            }
 
-            // 5. Generate ruins
-            if (isCityUpgrade != true)
+            // 5. Ruin / clear city tile
+            if (!isCityUpgrade)
             {
                 cityTile.improvement = new ImprovementState
                 {
@@ -1999,29 +2056,36 @@ namespace Conquest
             }
             else
             {
-                // cityTile.improvement = new ImprovementState { type = ImprovementData.Type.None };
                 cityTile.improvement = null;
             }
 
             cityTile.owner = 0;
-            // cityTile.capitalOf = 0;  // leave mark of capital
+            cityTile.rulingCityCoordinates = WorldCoordinates.NULL_COORDINATES;
 
-            // 6. Wipe all other cities if pass/multi
-            if (playerState != null && originalOwner != null && cityTile.capitalOf != 0 && gameState.Settings.RulesGameMode == EnumCache<GameMode>.GetType("reign")) {
+            // 6. Reign: wipe all other cities of that player when capital falls
+            if (playerState != null
+                && originalOwner != null
+                && cityTile.capitalOf != 0
+                && gameState.Settings.RulesGameMode == EnumCache<GameMode>.GetType("reign"))
+            {
                 Il2CppSystem.Collections.Generic.List<TileData> cityList = originalOwner.GetCityTiles(gameState);
-                foreach (TileData targetTile in cityList) {
-                    // gameState.ActionStack.Add(new CaptureCityAction(attacker.Id, targetTile.coordinates, originalOwner.Id));
-                    DestroyCityConquest(gameState, targetTile, playerState, false);
+                foreach (TileData targetTile in cityList)
+                {
+                    if (targetTile != null && targetTile.coordinates != center)
+                        DestroyCityConquest(gameState, targetTile, playerState, false);
                 }
             }
 
-            // 7. Wipe player if necessary
-            if (originalOwner != null && playerState != null && !originalOwner.IsAlive(gameState, gameState.Settings.rules.PlayerDeathCondition))
+            // 7. Wipe player if dead
+            if (originalOwner != null
+                && playerState != null
+                && !originalOwner.IsAlive(gameState, gameState.Settings.rules.PlayerDeathCondition))
             {
                 originalOwner.wipedAtCommandIndex = gameState.CommandStack.Count - 1;
                 gameState.ActionStack.Add(new WipePlayerAction(playerState.Id, originalOwner.Id));
             }
-            
+
+            InvalidateCityCaches();
             Loader.modLogger?.LogInfo($"[Conquest] City at {cityTile.coordinates} has been successfully razed.");
         }
 
