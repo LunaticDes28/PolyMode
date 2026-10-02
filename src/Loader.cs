@@ -20,16 +20,18 @@ namespace PolyMode
             try
             {
                 ClassInjector.RegisterTypeInIl2Cpp<CitadelOverlay>();
-                modLogger?.LogInfo("[Conquest-Loader] CitadelOverlay successfully registered in IL2CPP.");
+                modLogger?.LogInfo("[Loader] CitadelOverlay successfully registered in IL2CPP.");
+                ClassInjector.RegisterTypeInIl2Cpp<MonumentOverlay>();
+                modLogger?.LogInfo("[Loader] MonumentOverlay successfully registered in IL2CPP.");
             }
             catch (Exception ex)
             {
-                modLogger?.LogError($"[Conquest-Loader] Failed to register custom MonoBehaviours: {ex}");
+                modLogger?.LogError($"[Loader] Failed to register custom MonoBehaviours: {ex}");
             }
 
             // 載入所有 Harmony 補丁
             Harmony.CreateAndPatchAll(typeof(Loader));
-            Harmony.CreateAndPatchAll(typeof(City));
+            Harmony.CreateAndPatchAll(typeof(Mode));
             Harmony.CreateAndPatchAll(typeof(MapAnalysis));
 
             Harmony.CreateAndPatchAll(typeof(Conquest.Main));
@@ -40,12 +42,14 @@ namespace PolyMode
             Harmony.CreateAndPatchAll(typeof(Rush.AI_2));
 
             Harmony.CreateAndPatchAll(typeof(CitadelOverlay));
+            Harmony.CreateAndPatchAll(typeof(MonumentOverlay));
             Harmony.CreateAndPatchAll(typeof(OverlayPatches));
 
             RegisterCustomGameMode("conquest");
             RegisterCustomGameMode("reign");
             RegisterCustomGameMode("rusha");
             RegisterCustomGameMode("rushb");
+            RegisterCustomGameMode("rushc");
 
             PolyMod.Loader.AddPatchDataType("cityReward", typeof(CityReward));
             PolyMod.Loader.AddPatchDataType("opinion", typeof(OpinionManager.Type));
@@ -57,42 +61,42 @@ namespace PolyMode
         {
             try
             {
-                modLogger?.LogInfo($"[Conquest-Loader] Initializing custom GameMode registration for key: '{id}'");
+                modLogger?.LogInfo($"[Loader] Initializing custom GameMode registration for key: '{id}'");
 
                 // 1. Double map the string identifier to the next available native index slot
                 EnumCache<GameMode>.AddMapping(id, (GameMode)Registry.gameModesAutoidx);
                 EnumCache<GameMode>.AddMapping(id, (GameMode)Registry.gameModesAutoidx);
                 
-                modLogger?.LogInfo($"[Conquest-Loader] EnumCache mapping successfully bound to index: {Registry.gameModesAutoidx}");
+                modLogger?.LogInfo($"[Loader] EnumCache mapping successfully bound to index: {Registry.gameModesAutoidx}");
 
                 // 2. Increment the auto-index counter to keep memory aligned for other mods
                 Registry.gameModesAutoidx++;
-                modLogger?.LogInfo($"[Conquest-Loader] Registration completed. Next index: {Registry.gameModesAutoidx}");
+                modLogger?.LogInfo($"[Loader] Registration completed. Next index: {Registry.gameModesAutoidx}");
             }
             catch (Exception ex)
             {
-                modLogger?.LogError($"[Conquest-Loader] FAILURE: Access violation mapping GameMode enum cache: {ex}");
+                modLogger?.LogError($"[Loader] FAILURE: Access violation mapping GameMode enum cache: {ex}");
             }
         }
         public static void RegisterCustomOpinion(string id)
         {
             try
             {
-                modLogger?.LogInfo($"[Conquest-Loader] Initializing custom Opinion registration for key: '{id}'");
+                modLogger?.LogInfo($"[Loader] Initializing custom Opinion registration for key: '{id}'");
 
                 // 1. Double map the string identifier to the next available native index slot
                 EnumCache<OpinionManager.Type>.AddMapping(id, (OpinionManager.Type)opinionAutoidx);
                 EnumCache<OpinionManager.Type>.AddMapping(id, (OpinionManager.Type)opinionAutoidx);
 
-                modLogger?.LogInfo($"[Conquest-Loader] EnumCache mapping successfully bound to index: {opinionAutoidx}");
+                modLogger?.LogInfo($"[Loader] EnumCache mapping successfully bound to index: {opinionAutoidx}");
    
                 // 2. Increment the auto-index counter to keep memory aligned for other mods
                 opinionAutoidx++;
-                modLogger?.LogInfo($"[Conquest-Loader] Registration completed. Next index: {opinionAutoidx}");
+                modLogger?.LogInfo($"[Loader] Registration completed. Next index: {opinionAutoidx}");
             }
             catch (Exception ex)
             {
-                modLogger?.LogError($"[Conquest-Loader] FAILURE: Access violation mapping CityReward enum cache: {ex}");
+                modLogger?.LogError($"[Loader] FAILURE: Access violation mapping CityReward enum cache: {ex}");
             }
         }
     }

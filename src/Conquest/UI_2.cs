@@ -371,15 +371,15 @@ namespace Conquest
             } 
         }
 
-        [HarmonyPrefix]
+        [HarmonyPostfix]
         [HarmonyPatch(typeof(GameStatsScreen), nameof(GameStatsScreen.PopulatePlayers))]
-        public static bool PopulatePlayers_Reign(GameStatsScreen __instance)
+        public static void PopulatePlayers_Reign(GameStatsScreen __instance)
         {
             try
             {
                 if (__instance.GameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
                 {
-                    return true;
+                    return;
                 }
 
                 Il2CppSystem.Collections.Generic.List<PlayerState> playersSortedByRank = GameManager.GameState.GetPlayersSortedByRank();
@@ -514,12 +514,10 @@ namespace Conquest
                         row.SetActive(true);
                     }
                 }
-                return false;
             }
             catch (Exception ex)
             {
                 Loader.modLogger?.LogError($"[Conquest-Backend] GameStatsScreen PopulatePlayers error: {ex}");
-                return true;
             } 
         }
 
@@ -570,51 +568,45 @@ namespace Conquest
             } 
         }
 
-        [HarmonyPrefix]
+        [HarmonyPostfix]
         [HarmonyPatch(typeof(GameModeButtonWrapper), nameof(GameModeButtonWrapper.OnButtonClicked))]
-        public static bool OnButtonClicked_GamemodeInfo(GameModeButtonWrapper __instance, int id, UnityEngine.EventSystems.BaseEventData? eventData = null)
+        public static void OnButtonClicked_GamemodeInfo(GameModeButtonWrapper __instance, int id, UnityEngine.EventSystems.BaseEventData? eventData = null)
         {
             try
             {
-                if (__instance.currentGameMode != EnumCache<GameMode>.GetType("conquest")
-                    && __instance.currentGameMode != EnumCache<GameMode>.GetType("reign"))
+                if (__instance.currentGameMode == EnumCache<GameMode>.GetType("conquest") || __instance.currentGameMode == EnumCache<GameMode>.GetType("reign"))
                 {
-                    return true;
+                    string modeName = __instance.currentGameMode.GetName();
+                    string HeaderText = LocalizationUtils.CapitalizeString(modeName);
+
+                    BasicPopup basicPopup = PopupManager.GetBasicPopup();
+                    basicPopup.Header = HeaderText;
+
+                    string? text = null;
+                    string? text2 = Localization.Get(GameModeUtils.GetDescription(__instance.currentGameMode), (Il2CppReferenceArray<Il2CppSystem.Object>)Array.Empty<Il2CppSystem.Object>());
+
+                    if (__instance.currentGameMode == EnumCache<GameMode>.GetType("conquest"))
+                    {
+                        text = text2;
+                    } 
+                    else if (__instance.currentGameMode == EnumCache<GameMode>.GetType("reign"))
+                    {
+
+                        text = $"Game mode: Reign\n{text2}";
+                    }
+                    basicPopup.Description = text;
+                    basicPopup.buttonData = new PopupBase.PopupButtonData[]
+                    {
+                        new PopupBase.PopupButtonData("buttons.back", PopupBase.PopupButtonData.States.Selected, null, -1, true, null)
+                    };
+                    basicPopup.Show(InputManager.GetInputPosition());  
+
+                    Loader.modLogger?.LogInfo("[Conquest-Backend] OnButtonClicked finished!");
                 }
-                
-                string modeName = __instance.currentGameMode.GetName();
-                string HeaderText = LocalizationUtils.CapitalizeString(modeName);
-
-              	BasicPopup basicPopup = PopupManager.GetBasicPopup();
-                basicPopup.Header = HeaderText;
-
-                string? text = null;
-                string? text2 = Localization.Get(GameModeUtils.GetDescription(__instance.currentGameMode), (Il2CppReferenceArray<Il2CppSystem.Object>)Array.Empty<Il2CppSystem.Object>());
-
-                if (__instance.currentGameMode == EnumCache<GameMode>.GetType("conquest"))
-                {
-                    text = text2;
-                } 
-                else if (__instance.currentGameMode == EnumCache<GameMode>.GetType("reign"))
-                {
-
-                    text = $"Game mode: Reign\n{text2}";
-                }
-                basicPopup.Description = text;
-                basicPopup.buttonData = new PopupBase.PopupButtonData[]
-                {
-                    new PopupBase.PopupButtonData("buttons.back", PopupBase.PopupButtonData.States.Selected, null, -1, true, null)
-                };
-                basicPopup.Show(InputManager.GetInputPosition());  
-
-                Loader.modLogger?.LogInfo("[Conquest-Backend] OnButtonClicked finished!");
-
-                return false;
             }
             catch (Exception ex)
             {
                 Loader.modLogger?.LogError($"[Conquest-Backend] GameModeButtonWrapper error: {ex}");
-                return true;
             }
         }
 
@@ -628,13 +620,9 @@ namespace Conquest
                 {
                     __result = "gamemode.conquest.description";
                 }
-                else if (gameMode != EnumCache<GameMode>.GetType("reign"))
+                else if (gameMode == EnumCache<GameMode>.GetType("reign"))
                 {
                     __result = "gamemode.reign.description";
-                }
-                else
-                {
-                    __result = string.Empty;
                 }
             }
             catch (Exception ex)

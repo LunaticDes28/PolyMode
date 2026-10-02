@@ -883,7 +883,8 @@ namespace Conquest
         // =========================================================================
         // E. Citadel Logics (general)
         // =========================================================================
-        [HarmonyPostfix]
+        // Replaced by dynamic tech tree
+        /*[HarmonyPostfix]
         [HarmonyPatch(typeof(GameLogicData), nameof(GameLogicData.CanBuild))]
         private static void CanBuild_Citadel(GameLogicData __instance, GameState gameState, TileData tile, PlayerState playerState, ImprovementData improvement, ref bool __result)
         {
@@ -893,7 +894,9 @@ namespace Conquest
                 return;
             }
 
-            if (tile.unit != null && tile.unit.owner != playerState.Id)
+            PlayerState unitOwner;
+            gameState.TryGetPlayer(tile.unit.owner, out unitOwner);
+            if (tile.unit != null && tile.unit.owner != playerState.Id && !unitOwner.HasPeaceWith(playerState.Id))
             {
                 __result = false;
                 return;   
@@ -947,7 +950,7 @@ namespace Conquest
             {
                 Loader.modLogger?.LogError($"[Conquest] Error in CanBuild Postfix: {ex}");
             }            
-        }   
+        }*/
 
         /*[HarmonyPrefix]
         [HarmonyPatch(typeof(BuildAction), nameof(BuildAction.ExecuteDefault))]
@@ -2427,7 +2430,12 @@ namespace Conquest
                 return;
             }
 
-            if (tile.unit != null && tile.unit.owner != playerState.Id)
+            PlayerState? unitOwner = null;
+            if (tile.unit != null)
+            {
+                gameState.TryGetPlayer(tile.unit.owner, out unitOwner);
+            }
+            if (tile.unit != null && tile.unit.owner != playerState.Id && !unitOwner.HasPeaceWith(playerState.Id))
             {
                 __result = false;
                 return;   

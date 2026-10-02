@@ -32,6 +32,9 @@
     "gamemode_rusha_description": {
         "English": "Rush toward the throne of the Square. Become the king before everyone else."
     },
+    "gamemode_goal_rusha_description": {
+        "English": "Rush for the wealth glory."
+    },
     "gamemode_rusha_loss": {
         "English": "You suck."
     },
@@ -50,6 +53,36 @@
     "gamemode_rushb_description": {
         "English": "Rush toward the throne of the Square. Become the king before everyone else."
     },
+    "gamemode_goal_rushb_description": {
+        "English": "Rush for the military glory."
+    },
+    "gamemode_rushc_loss": {
+        "English": "You suck."
+    },
+    "gamemode_rushc_win": {
+        "English": "Your were crowned the king!"
+    },
+    "gamestatus_techs": {
+        "English": "{0} techs"
+    },
+    "gamestatus_tech": {
+        "English": "{0} tech"
+    },
+    "gamestatus_kills": {
+        "English": "{0} kills"
+    },
+    "gamestatus_kill": {
+        "English": "{0} kill"
+    },
+    "gamemode_rushc": {
+        "English": "Rush (Tech)"
+    },
+    "gamemode_rushc_description": {
+        "English": "Rush toward the throne of the Square. Become the king before everyone else."
+    },
+    "gamemode_goal_rushc_description": {
+        "English": "Rush for the civilization glory."
+    },
     "gamemode_rushb_loss": {
         "English": "You suck."
     },
@@ -61,12 +94,6 @@
     },
     "gamestatus_unit": {
         "English": "{0} unit"
-    },
-    "gamestatus_kills": {
-        "English": "{0} kills"
-    },
-    "gamestatus_kill": {
-        "English": "{0} kill"
     },
     "improvement_citadel": {
 		"English": "Citadel"

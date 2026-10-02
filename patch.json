@@ -21,8 +21,7 @@
 			],
 			"improvementUnlocks": [
 				"city",
-				"ruin",
-				"citadel"
+				"ruin"
 			],
 			"movementUnlocks": {
 				"field": 1,
@@ -41,7 +40,7 @@
 				"mine"
 			],
 			"abilityUnlocks": [
-				"mountaincitadel"
+
 			],
 			"cost": 2,
 			"idx": 23
@@ -54,12 +53,24 @@
 				"rammership"
 			],
 			"abilityUnlocks": [
-				"watercitadel"
+
 			],
 			"cost": 2,
 			"idx": 44
 		}
     },
+	"modeTech": {
+		"conquest": {
+			"basic": { "addImprovementUnlocks": ["citadel"] },
+			"mining": { "addAbilityUnlocks": ["mountaincitadel"] },
+			"ramming": { "addAbilityUnlocks": ["watercitadel"] }
+		},
+		"reign": {
+			"basic": { "addImprovementUnlocks": ["citadel"] },
+			"mining": { "addAbilityUnlocks": ["mountaincitadel"] },
+			"ramming": { "addAbilityUnlocks": ["watercitadel"] }
+		}
+	},
     "improvementData":{
 		"clearforest": {
 			"terrainRequirements": [

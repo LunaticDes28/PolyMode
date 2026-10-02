@@ -13,8 +13,11 @@ using Il2CppSystem.Dynamic.Utils;
 
 namespace PolyMode
 {
-    public static class City
+    public static class Mode
     {
+        // =========================================================================
+        // City Reward stuff
+        // =========================================================================
         public class CityRequirement
         {
             public string[]? mode { get; set; }
@@ -642,6 +645,251 @@ namespace PolyMode
 
             if (__instance.Level > maxVisualLevel)
                 __instance.Level = maxVisualLevel;
+        }
+
+        // =========================================================================
+        // Mode specific Tech Tree
+        // =========================================================================
+        public class TechModeData
+        {
+            public System.Collections.Generic.List<string>? addImprovementUnlocks;
+            public System.Collections.Generic.List<string>? addAbilityUnlocks;
+            public System.Collections.Generic.List<string>? addUnitUnlocks;
+            public System.Collections.Generic.List<string>? addTechUnlocks;
+        }
+
+        public class ModeTechManager
+        {
+            public static System.Collections.Generic.Dictionary<string, System.Collections.Generic.Dictionary<string, TechModeData>> ModePatches
+                = new System.Collections.Generic.Dictionary<string, System.Collections.Generic.Dictionary<string, TechModeData>>();
+
+            public static bool _applied;
+            public static string _appliedMode = "";
+
+            public static void RegisterFromJObject(JObject patch)
+            {
+                try
+                {
+                    if (patch == null || patch["modeTech"] == null) return;
+                    Loader.modLogger?.LogInfo($"[ModeTech] modeTech found");
+
+                    JObject? modes = patch["modeTech"].Cast<JObject>();
+                    if (modes == null) return;
+
+                    JProperty[] modeProps = modes.Properties().ToArray();
+                    for (int i = 0; i < modeProps.Length; i++)
+                    {
+                        JProperty modeProp = modeProps[i];
+                        if (modeProp == null) continue;
+
+                        string modeName = modeProp.Name.ToLowerInvariant();
+                        JObject? techObj = modeProp.Value?.Cast<JObject>();
+                        if (techObj == null) continue;
+
+                        if (!ModePatches.TryGetValue(modeName, out System.Collections.Generic.Dictionary<string, TechModeData>? map)
+                            || map == null)
+                        {
+                            map = new System.Collections.Generic.Dictionary<string, TechModeData>();
+                            ModePatches[modeName] = map;
+                        }
+
+                        JProperty[] techProps = techObj.Properties().ToArray();
+                        for (int t = 0; t < techProps.Length; t++)
+                        {
+                            JProperty techProp = techProps[t];
+                            if (techProp == null) continue;
+
+                            JObject? body = techProp.Value?.Cast<JObject>();
+                            if (body == null) continue;
+
+                            var p = new TechModeData
+                            {
+                                addImprovementUnlocks = ReadStringList(body["addImprovementUnlocks"]),
+                                addAbilityUnlocks = ReadStringList(body["addAbilityUnlocks"]),
+                                addUnitUnlocks = ReadStringList(body["addUnitUnlocks"]),
+                                addTechUnlocks = ReadStringList(body["addTechUnlocks"]),
+                            };
+
+                            map[techProp.Name.ToLowerInvariant()] = p;
+                            Loader.modLogger?.LogInfo($"[ModeTech] Registered {modeName}/{techProp.Name}");
+                        }
+                    }
+                }
+                catch (System.Exception ex)
+                {
+                    Loader.modLogger?.LogError($"[ModeTech] Register: {ex}");
+                }
+            }
+
+            static System.Collections.Generic.List<string>? ReadStringList(JToken? token)
+            {
+                if (token == null || token.Type != JTokenType.Array) return null;
+
+                JArray arr = token.Cast<JArray>();
+                if (arr == null || arr.Count == 0) return null;
+
+                var list = new System.Collections.Generic.List<string>();
+                for (int i = 0; i < arr.Count; i++)
+                {
+                    JToken item = arr[i];
+                    if (item != null)
+                        list.Add(item.ToString());
+                }
+                return list.Count > 0 ? list : null;
+            }
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(PolyMod.Loader), nameof(PolyMod.Loader.LoadGameLogicDataPatch))]
+        public static void LoadPatch_ModeTech(Mod mod, JObject gld, JObject patch)
+        {
+            try
+            {
+                if (patch != null)
+                {
+                    ModeTechManager.RegisterFromJObject(patch);
+                    Loader.modLogger?.LogInfo($"[ModeTech-Hook] Dependency finished loading patch for {mod?.id}. Intercepting modeTech...");
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Loader.modLogger?.LogError($"[ModeTech] LoadPatch: {ex}");
+            }
+        }
+
+        public static void ApplyForCurrentMode(GameLogicData logic, GameMode mode)
+        {
+            if (logic?.tech == null) return;
+
+            string name;
+            try
+            {
+                name = EnumCache<GameMode>.GetName(mode);
+                if (string.IsNullOrEmpty(name)) name = mode.ToString();
+                name = name.ToLowerInvariant();
+            }
+            catch
+            {
+                name = mode.ToString().ToLowerInvariant();
+            }
+
+            // Always strip first, then re-apply if needed
+            StripCitadelFamily(logic);
+
+            if (!ModeTechManager.ModePatches.TryGetValue(name, out var map) || map == null || map.Count == 0)
+            {
+                ModeTechManager._applied = false;
+                ModeTechManager._appliedMode = name;
+                Loader.modLogger?.LogInfo($"[ModeTech] No citadel for '{name}' (stripped)");
+                return;
+            }
+
+            foreach (var kvp in map)
+                ApplyTechPatch(logic, kvp.Key, kvp.Value);
+
+            ModeTechManager._applied = true;
+            ModeTechManager._appliedMode = name;
+            Loader.modLogger?.LogInfo($"[ModeTech] Applied for mode={name}");
+        }
+
+        static void ApplyTechPatch(GameLogicData logic, string techId, TechModeData p)
+        {
+            if (p == null) return;
+
+            TechData.Type techType;
+            try { techType = EnumCache<TechData.Type>.GetType(techId); }
+            catch { return; }
+
+            if (!logic.TryGetData(techType, out TechData tech) || tech == null) return;
+
+            if (p.addImprovementUnlocks != null)
+            {
+                for (int i = 0; i < p.addImprovementUnlocks.Count; i++)
+                {
+                    try
+                    {
+                        var t = EnumCache<ImprovementData.Type>.GetType(p.addImprovementUnlocks[i]);
+                        if (!logic.TryGetData(t, out ImprovementData imp) || imp == null) continue;
+                        if (tech.improvementUnlocks != null && !tech.improvementUnlocks.Contains(imp))
+                            tech.improvementUnlocks.Add(imp);
+                    }
+                    catch { }
+                }
+            }
+
+            if (p.addAbilityUnlocks != null)
+            {
+                for (int i = 0; i < p.addAbilityUnlocks.Count; i++)
+                {
+                    try
+                    {
+                        var ab = EnumCache<PlayerAbility.Type>.GetType(p.addAbilityUnlocks[i]);
+                        if (tech.abilityUnlocks != null && !tech.abilityUnlocks.Contains(ab))
+                            tech.abilityUnlocks.Add(ab);
+                    }
+                    catch { }
+                }
+            }
+        }
+
+        static void StripCitadelFamily(GameLogicData logic)
+        {
+            try
+            {
+                if (logic.TryGetData(TechData.Type.Basic, out TechData basic)
+                    && basic?.improvementUnlocks != null
+                    && logic.TryGetData(EnumCache<ImprovementData.Type>.GetType("citadel"), out ImprovementData citadel)
+                    && citadel != null)
+                {
+                    // Il2Cpp List: remove by scan
+                    for (int i = basic.improvementUnlocks.Count - 1; i >= 0; i--)
+                    {
+                        if (basic.improvementUnlocks[i] != null
+                            && basic.improvementUnlocks[i].type == citadel.type)
+                            basic.improvementUnlocks.RemoveAt(i);
+                    }
+                }
+            }
+            catch { }
+
+            try
+            {
+                if (logic.TryGetData(TechData.Type.Mining, out TechData mining)
+                    && mining?.abilityUnlocks != null)
+                {
+                    var ab = EnumCache<PlayerAbility.Type>.GetType("mountaincitadel");
+                    for (int i = mining.abilityUnlocks.Count - 1; i >= 0; i--)
+                    {
+                        if (mining.abilityUnlocks[i] == ab)
+                            mining.abilityUnlocks.RemoveAt(i);
+                    }
+                }
+            }
+            catch { }
+
+            try
+            {
+                if (logic.TryGetData(TechData.Type.Ramming, out TechData ramming)
+                    && ramming?.abilityUnlocks != null)
+                {
+                    var ab = EnumCache<PlayerAbility.Type>.GetType("watercitadel");
+                    for (int i = ramming.abilityUnlocks.Count - 1; i >= 0; i--)
+                    {
+                        if (ramming.abilityUnlocks[i] == ab)
+                            ramming.abilityUnlocks.RemoveAt(i);
+                    }
+                }
+            }
+            catch { }
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(GameManager), nameof(GameManager.LoadLevel))]
+        static void LoadLevel_ModeTech()
+        {
+            var gameState = GameManager.GameState ?? GameManager.Client?.GameState;
+            if (gameState?.GameLogicData == null || gameState.Settings == null) return;
+            ApplyForCurrentMode(gameState.GameLogicData, gameState.Settings.RulesGameMode);
         }
     }
 }

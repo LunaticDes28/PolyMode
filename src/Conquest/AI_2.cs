@@ -3,6 +3,7 @@ using Il2CppSystem.Threading.Tasks;
 using Polytopia.Data;
 using PolytopiaBackendBase.Game;
 using PolyMode;
+using Il2CppSystem.Linq.Expressions.Interpreter;
 
 namespace Conquest
 {
@@ -35,26 +36,60 @@ namespace Conquest
             if (gameState?.Settings == null) return true;
             try
             {
-                if (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
-                    && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
-                    return true;
-
                 if (winningPlayer == null)
                 {
                     __result = 0f;
+                    return true;
+                }
+
+                if (gameState.Settings.RulesGameMode == EnumCache<GameMode>.GetType("conquest")
+                    || gameState.Settings.RulesGameMode == EnumCache<GameMode>.GetType("reign"))
+                {
+                    float totalCities = Math.Max(0.1f, MapDataExtensions.CountCities(gameState));
+                    float cityProgress = winningPlayer.cities / totalCities;
+                    __result = Math.Min(1f, Math.Max(0f, cityProgress));
                     return false;
                 }
 
-                float totalCities = Math.Max(0.1f, MapDataExtensions.CountCities(gameState));
-                float cityProgress = winningPlayer.cities / totalCities;
-                __result = Math.Min(1f, Math.Max(0f, cityProgress));
-                return false;
+                if (gameState.Settings.RulesGameMode == EnumCache<GameMode>.GetType("rusha"))
+                {
+                    float incomeProgress =
+                        ResourceDataUtils.CalculateIncomeFor(gameState, winningPlayer.Id)
+                        / (winningPlayer.cities * 15);
+                    __result = Math.Min(1f, Math.Max(0f, incomeProgress));
+                    return false;
+                }
+                else if (gameState.Settings.RulesGameMode == EnumCache<GameMode>.GetType("rushb"))
+                {
+                    var list = new Il2CppSystem.Collections.Generic.List<TileData>();
+                    gameState.Map.GetPlayerCityTiles(winningPlayer.Id, list);
+                    short maxUnit = 0;
+                    foreach (TileData tileData in list)
+                    {
+                        if (tileData?.improvement == null) continue;
+                        maxUnit += (short)((short)tileData.improvement.level + 1);
+                    }
+
+                    float denom = Math.Max(1, (int)maxUnit);
+                    float militaryProgress = winningPlayer.CountUnits(gameState) / denom;
+                    __result = Math.Min(1f, Math.Max(0f, militaryProgress));
+                    return false;
+                }
+                else if (gameState.Settings.RulesGameMode == EnumCache<GameMode>.GetType("rushc"))
+                {
+                    var all = gameState.GameLogicData.GetAllTechForTribe(winningPlayer.tribe);
+                    float denom = Math.Max(1, all?.Count ?? 1);
+                    __result = Math.Min(1f, Math.Max(0f, Rush.AI_2.TechCount(winningPlayer) / denom));
+                    return false;
+                }
+
+                return true;
             }
             catch (Exception ex)
             {
                 Loader.modLogger?.LogError($"[Conquest-AI] GetGameProgress: {ex.Message}");
                 __result = 0f;
-                return false;
+                return true;
             }
         }
 
@@ -142,6 +177,7 @@ namespace Conquest
         // B. Development
         // =========================================================================
         [HarmonyPostfix]
+        [HarmonyPriority(Priority.Last)]
         [HarmonyPatch(typeof(AI), nameof(AI.ChooseCityReward))]
         private static void ChooseCityReward_Conquest(
             GameState gameState, TileData tile, CityReward[] rewards, ref CityReward __result)
@@ -197,9 +233,17 @@ namespace Conquest
                 }
                 else
                 {  
-                    /*__result = random.Next(0, 1) == 0
+                    /*if (gameState.Settings.RulesGameMode == EnumCache<GameMode>.GetType("conquest")
+                        || gameState.Settings.RulesGameMode == EnumCache<GameMode>.GetType("reign"))
+                    {
+                        __result = CityReward.BorderGrowth;
+                    }
+                    else
+                    {
+                        __result = random.Next(0, 1) == 0
                         ? CityReward.BorderGrowth
-                        : CityReward.PopulationGrowth;*/
+                        : CityReward.PopulationGrowth;
+                    }*/
                     __result = CityReward.BorderGrowth;
                 }
             }
@@ -1060,7 +1104,7 @@ namespace Conquest
                 // -----------------------------------------------------------------
                 // 2) Rider
                 // -----------------------------------------------------------------
-                if (unit.UnitData.HasAbility(UnitAbility.Type.Escape) && unit.attacked)
+                if (unit.UnitData.HasAbility(UnitAbility.Type.Escape) && unit.attacked && !(startTile.improvement != null && startTile.improvement.type == ImprovementData.Type.City && startTile.owner != unit.owner))
                 {
                     //Loader.modLogger?.LogInfo($"[Conquest-AI] Escape has attacked");
                     List<WorldCoordinates> enemyPositions = MapAnalysis.CollectEnemyPositions(gameState, start, 7, player.Id);
@@ -1421,7 +1465,7 @@ namespace Conquest
                     CommandBase cmd = managed[i].command;
                     if (cmd.GetCommandType() == CommandType.Build)
                     {
-                        Loader.modLogger?.LogInfo($"[Conquest] Cmd {i} is {cmd?.TryCast<BuildCommand>()?.Type.GetDisplayName()}");
+                        //Loader.modLogger?.LogInfo($"[Conquest] Cmd {i} is {cmd?.TryCast<BuildCommand>()?.Type.GetDisplayName()}");
                     }
 
                     if (cmd == null) continue;
@@ -1643,16 +1687,34 @@ namespace Conquest
                                         }
                                         catch { }
                                     }
-                                    mult *= (forSecondary || forFarm) ? 0f : 1f;
+                                    if (tile != null)
+                                    {
+                                        mult *= (forSecondary || forFarm || CitySiegedCached(gameState, player, tile, siegeCache)) ? 0f : 1f;
+                                    }
                                     if (mult > 0f && !inTop)
                                         mult *= 1.5f; // optional: help mid-list grows a bit
                                 }
                                 else if (bc.Type == ImprovementData.Type.Port)
                                 {
-                                    if (tile == null)
-                                        mult *= 0f;
-                                    else
+                                    if (tile != null)
+                                    {
                                         mult *= PortValueMultCached(gameState, player, tile, bc, portCountCache, siegeCache);
+                                    }
+                                }
+                                else if (bc.Type.IsMonument() && gameState.Settings.RulesGameMode == EnumCache<GameMode>.GetType("rushc"))
+                                {
+                                    if (tile != null)
+                                    {
+                                        TileData cityTile = gameState.Map.GetTile(tile.coordinates);
+                                        var centerResult = MapAnalysis.ScanCityFromCenter(gameState.Map, gameState, cityTile, 5, player);
+                                        Loader.modLogger?.LogInfo($"[Rush-Tech] Pre Monument cmd {i} is {bc.Type.GetDisplayName()} and score is {sc.score}");
+                                        Loader.modLogger?.LogInfo($"[Rush-Tech] MapAnalysis result is Enemy = {centerResult.EnemyCityCount} & Owned = {centerResult.OwnedCityCount}");
+                                        mult *= (float)(1 - 0.15 * centerResult.EnemyCityCount + 0.05 * centerResult.OwnedCityCount);
+                                        mult *= (float)(1 - 0.40 * Rush.AI_2.CountMonumentsInCity(gameState, cityTile));
+                                        Loader.modLogger?.LogInfo($"[Rush-Tech] Monument count is {Rush.AI_2.CountMonumentsInCity(gameState, cityTile)}");
+                                        Loader.modLogger?.LogInfo($"[Rush-Tech] Post Monument cmd {i} is {bc.Type.GetDisplayName()} and score is {sc.score * mult}");
+                                    }
+                                    
                                 }
                                 else
                                 {

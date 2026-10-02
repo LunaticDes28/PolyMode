@@ -1,60 +1,19 @@
-using UnityEngine;
-using TMPro;
+using System;
+using System.Linq;
+using HarmonyLib;
+using Il2CppInterop.Runtime;
 using PolyMod;
 using Polytopia.Data;
 using PolytopiaBackendBase.Game;
-using HarmonyLib;
-using Il2CppInterop.Runtime;
-using System;
-using System.Linq;
+using TMPro;
+using UnityEngine;
 
 namespace PolyMode
 {
     public class CitadelOverlay : MonoBehaviour
     {
-        /*private static void ProbeFogSort()
-        {
-            if (fogProbeDone) return;
-            fogProbeDone = true;
-
-            try
-            {
-                var renderers = UnityEngine.Object.FindObjectsOfType<SpriteRenderer>();
-                SpriteRenderer? best = null;
-                int bestOrder = int.MinValue;
-
-                foreach (var sr in renderers)
-                {
-                    if (sr == null) continue;
-                    string n = sr.gameObject.name ?? "";
-                    string layer = sr.sortingLayerName ?? "";
-                    // adjust names if logs show something else
-                    if (n.IndexOf("fog", StringComparison.OrdinalIgnoreCase) < 0
-                        && layer.IndexOf("fog", StringComparison.OrdinalIgnoreCase) < 0)
-                        continue;
-
-                    if (sr.sortingOrder >= bestOrder)
-                    {
-                        bestOrder = sr.sortingOrder;
-                        best = sr;
-                    }
-                }
-
-                if (best != null)
-                {
-                    fogLayerName = best.sortingLayerName;
-                    fogLayerId = best.sortingLayerID;
-                    fogOrder = best.sortingOrder;
-                    // Loader.modLogger?.LogInfo($"[Citadel] Fog sort: layer={fogLayerName} id={fogLayerId} order={fogOrder}");
-                }
-            }
-            catch (Exception ex)
-            {
-                Loader.modLogger?.LogWarning($"[Citadel] Fog probe failed: {ex.Message}");
-            }
-        }*/
-
         public CitadelOverlay(IntPtr handle) : base(handle) { }
+
         public TextMeshPro? label;
         public SpriteRenderer? background;
         public Transform? contentTransform;
@@ -63,43 +22,40 @@ namespace PolyMode
         {
             try
             {
-                // 1. TextMeshPro 初始化
                 var type = Il2CppType.Of<TextMeshPro>();
                 var textComponent = gameObject.AddComponent(type);
                 if (textComponent != null)
-                {
                     label = textComponent.Cast<TextMeshPro>();
-                }
 
-                // 2. 使用 IL2CPP 安全非泛型寫法掛載 SpriteRenderer
                 var bgObj = new GameObject("Background");
                 bgObj.transform.SetParent(transform, false);
-                
                 var srType = Il2CppType.Of<SpriteRenderer>();
                 var addedSr = bgObj.AddComponent(srType);
                 if (addedSr != null)
-                {
                     background = addedSr.Cast<SpriteRenderer>();
-                }
 
                 if (background != null)
                 {
                     var bgSprite = Resources.FindObjectsOfTypeAll<Sprite>()
-                        .FirstOrDefault(s => s.name.Contains("panel") || s.name.Contains("box") || s.name.Contains("ui"));
+                        .FirstOrDefault(s =>
+                            s.name.Contains("panel")
+                            || s.name.Contains("box")
+                            || s.name.Contains("ui"));
 
-                    if (bgSprite != null) background.sprite = bgSprite;
+                    if (bgSprite != null)
+                        background.sprite = bgSprite;
+
                     background.color = new Color(0.1f, 0.1f, 0.1f, 0.7f);
-                    background.sortingOrder = 29; 
+                    background.sortingOrder = 29;
                 }
 
-                // 3. Content 節點建立
                 var contentObj = new GameObject("Content");
                 contentObj.transform.SetParent(transform, false);
                 contentTransform = contentObj.transform;
             }
             catch (Exception ex)
             {
-                Loader.modLogger?.LogError($"[Conquest] Error in Citadel Overlay Awake: {ex.Message}");
+                Loader.modLogger?.LogError($"[Conquest] CitadelOverlay.Awake: {ex.Message}");
             }
         }
 
@@ -118,14 +74,13 @@ namespace PolyMode
             try
             {
                 var tile = building.Tile;
-                if (tile?.Data != null && tile.Data.rulingCityCoordinates != WorldCoordinates.NULL_COORDINATES)
+                if (tile?.Data != null
+                    && tile.Data.rulingCityCoordinates != WorldCoordinates.NULL_COORDINATES)
                 {
-                    TileData cityTile = GameManager.GameState.Map.GetTile(tile.Data.rulingCityCoordinates);
-                    
+                    TileData cityTile = GameManager.GameState.Map.GetTile(
+                        tile.Data.rulingCityCoordinates);
                     if (cityTile?.improvement?.name != null)
-                    {
-                        displayName = cityTile.improvement.name;   
-                    }
+                        displayName = cityTile.improvement.name;
                 }
                 else if (!string.IsNullOrEmpty(data.displayName))
                 {
@@ -134,41 +89,26 @@ namespace PolyMode
             }
             catch (Exception ex)
             {
-                Loader.modLogger?.LogWarning($"[Conquest] Failed to get citadel city name: {ex.Message}");
+                Loader.modLogger?.LogWarning(
+                    $"[Conquest] Failed to get citadel city name: {ex.Message}");
             }
 
             label.text = displayName;
 
-            // ⭕ 【第一步：優化化簡——移除非精準的隨機字型搜尋】
-            string officialLayerName = "Default";
-            int officialLayerID = 0;
-
-            var parentSr = building.GetComponent<SpriteRenderer>() ?? building.GetComponentInChildren<SpriteRenderer>();
-            if (parentSr != null)
-            {
-                officialLayerName = parentSr.sortingLayerName;
-                officialLayerID = parentSr.sortingLayerID;
-            }
-
             if (label.fontSharedMaterial != null)
-            {
                 label.fontSharedMaterial.renderQueue = 4000;
-            }
 
-            // ⭕ 【第二步：核心重構——直接在原地建立 100% 標準長方形幾何體】
             if (background != null)
             {
-                // 如果上面 Postfix 沒偷成功（Sprite 仍為空），才啟用純白長方形保底
                 if (background.sprite == null)
                 {
-                    Texture2D whiteTex = Texture2D.whiteTexture; 
-                    background.sprite = Sprite.Create(whiteTex, new Rect(0, 0, whiteTex.width, whiteTex.height), new Vector2(0.5f, 0.5f));
-                    background.drawMode = SpriteDrawMode.Simple; 
+                    Texture2D whiteTex = Texture2D.whiteTexture;
+                    background.sprite = Sprite.Create(
+                        whiteTex,
+                        new Rect(0, 0, whiteTex.width, whiteTex.height),
+                        new Vector2(0.5f, 0.5f));
+                    background.drawMode = SpriteDrawMode.Simple;
                 }
-
-                // 注意：官方的自訂背景可能帶有特殊的透明度 Shader，如果換了官方 Sprite 發現變全黑或沒隱藏，
-                // 可以嘗試把下面這行 Canvas 材質註解掉，改用原本圖片帶有的預設材質
-                // background.material = Canvas.GetDefaultCanvasMaterial();
 
                 if (building.Owner != null)
                 {
@@ -177,15 +117,12 @@ namespace PolyMode
                 }
             }
 
-            // ⭕ 【第三步：動態 Depth 層級設定】
-            //ProbeFogSort();
-
             const string LayerName = "Terrain";
             const int LayerId = 1783986775;
             const int fogOrder = 31;
 
-            int orderBg = fogOrder - 2;   // 29
-            int orderText = fogOrder - 1; // 30
+            int orderBg = fogOrder - 2;
+            int orderText = fogOrder - 1;
 
             var meshRenderer = label.GetComponent<MeshRenderer>();
             if (meshRenderer != null)
@@ -202,57 +139,190 @@ namespace PolyMode
                 background.sortingOrder = orderBg;
             }
 
-            // ⭕ 【第四步：將 UpdateOverlaySize 邏輯全面攤平融入尾端（不依賴外部私有方法呼交）】
             label.ForceMeshUpdate(false, false);
-            float textWidth = (float)(label.bounds.size.x * 2); 
+            float textWidth = (float)(label.bounds.size.x * 2);
 
-            // 💡 參數調整：現在背景是絕對純粹的長方形，1.0f 即為 Unity 標準的一個世界座標方格大小
-            float paddingX = 0.2f;             // 文字左右兩側要留白的世界單位寬度
+            float paddingX = 0.2f;
             float targetWidth = textWidth + paddingX;
-            float targetHeight = 0.4f;          // 長方形的絕對物理高度
+            float targetHeight = 0.4f;
 
             if (background != null)
-            {
-                // 由於底層是 1x1 頂點四邊形，直接使用 localScale 來決定長方形的精準物理寬高
                 background.transform.localScale = new Vector3(targetWidth, targetHeight, 1f);
-            }
 
-            // 處理整個文字與背景容器的水平置中對齊
             if (contentTransform != null)
             {
                 contentTransform.localScale = Vector3.one;
-                contentTransform.localPosition = new Vector3(-targetWidth * 0f, 0f, 0f);
+                contentTransform.localPosition = new Vector3(0f, 0f, 0f);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Rush (rushc): research countdown (O)=active (X)=blocked.
+    /// </summary>
+    public class MonumentOverlay : MonoBehaviour
+    {
+        public MonumentOverlay(IntPtr handle) : base(handle) { }
+
+        public TextMeshPro? label;
+        public SpriteRenderer? background;
+        public Transform? contentTransform;
+
+        public void Awake()
+        {
+            try
+            {
+                var type = Il2CppType.Of<TextMeshPro>();
+                var textComponent = gameObject.AddComponent(type);
+                if (textComponent != null)
+                    label = textComponent.Cast<TextMeshPro>();
+
+                var bgObj = new GameObject("Background");
+                bgObj.transform.SetParent(transform, false);
+                var srType = Il2CppType.Of<SpriteRenderer>();
+                var addedSr = bgObj.AddComponent(srType);
+                if (addedSr != null)
+                    background = addedSr.Cast<SpriteRenderer>();
+
+                if (background != null)
+                {
+                    var bgSprite = Resources.FindObjectsOfTypeAll<Sprite>()
+                        .FirstOrDefault(s =>
+                            s.name.Contains("panel")
+                            || s.name.Contains("box")
+                            || s.name.Contains("ui"));
+
+                    if (bgSprite != null)
+                        background.sprite = bgSprite;
+
+                    background.color = new Color(0.1f, 0.1f, 0.1f, 0.7f);
+                    background.sortingOrder = 29;
+                }
+
+                var contentObj = new GameObject("Content");
+                contentObj.transform.SetParent(transform, false);
+                contentTransform = contentObj.transform;
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Rush] MonumentOverlay.Awake: {ex.Message}");
+            }
+        }
+
+        public void SetTurns(int turnsLeft, bool blocked, Building building)
+        {
+            if (label == null) return;
+
+            if (turnsLeft <= 0)
+                label.text = blocked ? "(X)" : "(O)";
+            else
+                label.text = blocked ? $"(X) {turnsLeft}" : $"(O) {turnsLeft}";
+
+            if (label.fontSharedMaterial != null)
+                label.fontSharedMaterial.renderQueue = 4000;
+
+            if (background != null)
+            {
+                if (background.sprite == null)
+                {
+                    Texture2D whiteTex = Texture2D.whiteTexture;
+                    background.sprite = Sprite.Create(
+                        whiteTex,
+                        new Rect(0, 0, whiteTex.width, whiteTex.height),
+                        new Vector2(0.5f, 0.5f));
+                    background.drawMode = SpriteDrawMode.Simple;
+                }
+
+                if (building?.Owner != null)
+                {
+                    var playerColor = building.Owner.GetPlayerColor(GameManager.GameState);
+                    background.color = ColorUtil.SetAlphaOnColor(playerColor, 0.68f);
+                }
+            }
+
+            const string LayerName = "Terrain";
+            const int LayerId = 1783986775;
+            const int fogOrder = 31;
+
+            int orderBg = fogOrder - 2;
+            int orderText = fogOrder - 1;
+
+            var meshRenderer = label.GetComponent<MeshRenderer>();
+            if (meshRenderer != null)
+            {
+                meshRenderer.sortingLayerName = LayerName;
+                meshRenderer.sortingLayerID = LayerId;
+                meshRenderer.sortingOrder = orderText;
+            }
+
+            if (background != null)
+            {
+                background.sortingLayerName = LayerName;
+                background.sortingLayerID = LayerId;
+                background.sortingOrder = orderBg;
+            }
+
+            label.ForceMeshUpdate(false, false);
+            float textWidth = (float)(label.bounds.size.x * 2);
+
+            float paddingX = 0.2f;
+            float targetWidth = textWidth + paddingX;
+            float targetHeight = 0.4f;
+
+            if (background != null)
+                background.transform.localScale = new Vector3(targetWidth, targetHeight, 1f);
+
+            if (contentTransform != null)
+            {
+                contentTransform.localScale = Vector3.one;
+                contentTransform.localPosition = new Vector3(0f, 0f, 0f);
             }
         }
     }
 
     public class OverlayPatches
     {
+        // ---------------------------------------------------------------------
+        // Citadel (conquest / reign)
+        // ---------------------------------------------------------------------
+        static bool IsCitadelMode()
+        {
+            var gs = GameManager.GameState;
+            if (gs?.Settings == null) return false;
+            var mode = gs.Settings.RulesGameMode;
+            return mode == EnumCache<GameMode>.GetType("conquest")
+                || mode == EnumCache<GameMode>.GetType("reign");
+        }
+
+        static Transform? FindCitadelOverlay(Building building)
+        {
+            if (building?.transform == null) return null;
+            return building.transform.Find("CitadelOverlay");
+        }
+
+        static void SetCitadelOverlayVisible(Building building, bool visible)
+        {
+            var t = FindCitadelOverlay(building);
+            if (t == null) return;
+
+            bool show = visible && GameManager.debugShowGameUI;
+            if (t.gameObject.activeSelf != show)
+                t.gameObject.SetActive(show);
+        }
+
         [HarmonyPostfix]
         [HarmonyPatch(typeof(Building), nameof(Building.SetData))]
-        public static void Building_SetData(Building __instance, ImprovementData data)
+        public static void Building_SetData_Citadel(Building __instance, ImprovementData data)
         {
             try
             {
-                // ===== Safe GameState / mode check =====
-                if (GameManager.GameState == null || GameManager.GameState.Settings == null) return;
-
-                var mode = GameManager.GameState.Settings.RulesGameMode;
-                if (mode != EnumCache<GameMode>.GetType("conquest") && mode != EnumCache<GameMode>.GetType("reign")) return;
-
+                if (!IsCitadelMode()) return;
                 if (__instance == null || data == null) return;
-
                 if (data.type != EnumCache<ImprovementData.Type>.GetType("citadel")) return;
-
                 if (data.type == ImprovementData.Type.City) return;
-
-                // if (!__instance.tile.data.GetExplored(__instance.Owner.Id)) return;
-
                 if (__instance.transform == null) return;
-
                 if (__instance.transform.Find("CitadelOverlay") != null) return;
 
-                // 1. Get vanilla CityStatusDisplay
                 var vanillaDisplay = ObjectPool.GetPooledObject<CityStatusDisplay>("CityStatusDisplay");
                 if (vanillaDisplay == null) return;
 
@@ -260,7 +330,6 @@ namespace PolyMode
                 TMP_FontAsset? officialFont = null;
                 Material? officialFontMaterial = null;
 
-                // 2. Extract font / bg safely
                 try
                 {
                     if (vanillaDisplay.nameContainer != null)
@@ -277,17 +346,13 @@ namespace PolyMode
                 }
                 catch (Exception ex)
                 {
-                    Loader.modLogger?.LogWarning($"[Conquest] Failed to extract CityStatusDisplay assets: {ex.Message}");
+                    Loader.modLogger?.LogWarning(
+                        $"[Conquest] Failed to extract CityStatusDisplay assets: {ex.Message}");
                 }
 
-                // 3. Return to pool
-                try
-                {
-                    vanillaDisplay.ReturnToPool();
-                }
-                catch { /* ignore pool errors */ }
+                try { vanillaDisplay.ReturnToPool(); }
+                catch { /* ignore */ }
 
-                // 4. Create overlay
                 var overlayObj = new GameObject("CitadelOverlay");
                 var overlayType = Il2CppType.Of<CitadelOverlay>();
                 var added = overlayObj.AddComponent(overlayType);
@@ -309,7 +374,6 @@ namespace PolyMode
                     overlay.background.drawMode = SpriteDrawMode.Sliced;
                 }
 
-                // 5. Apply official font
                 if (overlay.label != null)
                 {
                     if (officialFont != null)
@@ -323,10 +387,310 @@ namespace PolyMode
                 }
 
                 overlay.SetCitadel(__instance, data);
+
+                bool explored = __instance.Tile != null && !__instance.Tile.IsHidden;
+                SetCitadelOverlayVisible(__instance, explored);
             }
             catch (Exception ex)
             {
-                Loader.modLogger?.LogError($"[Conquest] Building SetData error: {ex}");
+                Loader.modLogger?.LogError($"[Conquest] Building.SetData citadel: {ex}");
+            }
+        }
+
+        static void SyncCitadelOverlayVisibility(Building building)
+        {
+            try
+            {
+                if (!IsCitadelMode()) return;
+                if (building == null || building.Tile == null) return;
+                if (FindCitadelOverlay(building) == null) return;
+
+                bool explored = !building.Tile.IsHidden;
+                SetCitadelOverlayVisible(building, explored);
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogWarning(
+                    $"[Conquest] Building.UpdateObject citadel: {ex.Message}");
+            }
+        }
+
+        // ---------------------------------------------------------------------
+        // Monument research (rushc)
+        // ---------------------------------------------------------------------
+        static bool IsMonumentType(ImprovementData.Type t)
+        {
+            try { return t.IsMonument(); }
+            catch
+            {
+                return t >= ImprovementData.Type.Monument1
+                    && t <= ImprovementData.Type.Monument7;
+            }
+        }
+
+        static bool IsRushTechMode()
+        {
+            var gs = GameManager.GameState;
+            if (gs?.Settings == null) return false;
+            return gs.Settings.RulesGameMode == EnumCache<GameMode>.GetType("rushc");
+        }
+
+        static Transform? FindMonumentOverlay(Building building)
+        {
+            if (building?.transform == null) return null;
+            return building.transform.Find("MonumentOverlay");
+        }
+
+        static void SetMonumentOverlayVisible(Building building, bool visible)
+        {
+            var t = FindMonumentOverlay(building);
+            if (t == null) return;
+
+            bool show = visible && GameManager.debugShowGameUI;
+            if (t.gameObject.activeSelf != show)
+                t.gameObject.SetActive(show);
+        }
+
+        static void ApplyMonumentTurns(Building building, MonumentOverlay overlay)
+        {
+            if (overlay == null || building == null) return;
+            try
+            {
+                bool blocked;
+                int turns = Rush.AI_2.GetResearchTurnsDisplay(
+                    building.Tile.Data, GameManager.GameState, out blocked);
+                overlay.SetTurns(turns, blocked, building);
+            }
+            catch
+            {
+                overlay.SetTurns(0, true, building);
+            }
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(Building), nameof(Building.SetData))]
+        public static void Building_SetData_Monument(Building __instance, ImprovementData data)
+        {
+            try
+            {
+                if (!IsRushTechMode()) return;
+                if (__instance == null || data == null) return;
+                if (!IsMonumentType(data.type)) return;
+                if (__instance.transform == null) return;
+                if (__instance.transform.Find("MonumentOverlay") != null) return;
+
+                var vanillaDisplay = ObjectPool.GetPooledObject<CityStatusDisplay>("CityStatusDisplay");
+                if (vanillaDisplay == null) return;
+
+                Sprite? officialBgSprite = null;
+                TMP_FontAsset? officialFont = null;
+                Material? officialFontMaterial = null;
+
+                try
+                {
+                    if (vanillaDisplay.nameContainer != null)
+                    {
+                        if (vanillaDisplay.nameContainer.bg != null)
+                            officialBgSprite = vanillaDisplay.nameContainer.bg.sprite;
+
+                        if (vanillaDisplay.nameContainer.label != null)
+                        {
+                            officialFont = vanillaDisplay.nameContainer.label.font;
+                            officialFontMaterial = vanillaDisplay.nameContainer.label.fontSharedMaterial;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Loader.modLogger?.LogWarning(
+                        $"[Rush] Failed to extract CityStatusDisplay assets: {ex.Message}");
+                }
+
+                try { vanillaDisplay.ReturnToPool(); }
+                catch { /* ignore */ }
+
+                var overlayObj = new GameObject("MonumentOverlay");
+                var overlayType = Il2CppType.Of<MonumentOverlay>();
+                var added = overlayObj.AddComponent(overlayType);
+                if (added == null)
+                {
+                    UnityEngine.Object.Destroy(overlayObj);
+                    return;
+                }
+
+                var overlay = added.Cast<MonumentOverlay>();
+                overlayObj.transform.SetParent(__instance.transform, false);
+                overlayObj.transform.rotation = Quaternion.identity;
+                overlayObj.transform.localScale = Vector3.one;
+                overlayObj.transform.localPosition = new Vector3(0f, -0.1f, 0f);
+
+                if (officialBgSprite != null && overlay.background != null)
+                {
+                    overlay.background.sprite = officialBgSprite;
+                    overlay.background.drawMode = SpriteDrawMode.Sliced;
+                }
+
+                if (overlay.label != null)
+                {
+                    if (officialFont != null)
+                        overlay.label.font = officialFont;
+                    if (officialFontMaterial != null)
+                        overlay.label.fontSharedMaterial = officialFontMaterial;
+
+                    overlay.label.fontSize = 1.25f;
+                    overlay.label.alignment = TextAlignmentOptions.Center;
+                    overlay.label.fontStyle = FontStyles.Normal;
+                }
+
+                ApplyMonumentTurns(__instance, overlay);
+
+                bool explored = __instance.Tile != null && !__instance.Tile.IsHidden;
+                SetMonumentOverlayVisible(__instance, explored);
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Rush] Building.SetData monument: {ex}");
+            }
+        }
+
+        static void SyncMonumentOverlay(Building building)
+        {
+            try
+            {
+                if (!IsRushTechMode()) return;
+                if (building == null || building.Tile == null) return;
+
+                var t = FindMonumentOverlay(building);
+                if (t == null) return;
+
+                var overlay = t.GetComponent<MonumentOverlay>();
+                if (overlay != null)
+                    ApplyMonumentTurns(building, overlay);
+
+                bool explored = !building.Tile.IsHidden;
+                SetMonumentOverlayVisible(building, explored);
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogWarning(
+                    $"[Rush] Building.UpdateObject monument: {ex.Message}");
+            }
+        }
+
+        // ---------------------------------------------------------------------
+        // Shared Building hooks
+        // ---------------------------------------------------------------------
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(Building), nameof(Building.UpdateObject), new Type[] { })]
+        public static void Building_UpdateObject(Building __instance)
+        {
+            SyncCitadelOverlayVisibility(__instance);
+            SyncMonumentOverlay(__instance);
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(Building), nameof(Building.UpdateObject),
+            new Type[] { typeof(MapRenderContext), typeof(SkinVisualsTransientData) })]
+        public static void Building_UpdateObject_Ctx(
+            Building __instance,
+            MapRenderContext ctx,
+            SkinVisualsTransientData transientSkinData)
+        {
+            SyncCitadelOverlayVisibility(__instance);
+            SyncMonumentOverlay(__instance);
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(Building), nameof(Building.SetVisible))]
+        public static void Building_SetVisible(Building __instance, bool value)
+        {
+            try
+            {
+                if (__instance == null) return;
+
+                bool explored = __instance.Tile != null && !__instance.Tile.IsHidden;
+
+                if (IsCitadelMode() && FindCitadelOverlay(__instance) != null)
+                    SetCitadelOverlayVisible(__instance, value && explored);
+
+                if (IsRushTechMode() && FindMonumentOverlay(__instance) != null)
+                    SetMonumentOverlayVisible(__instance, value && explored);
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogWarning(
+                    $"[PolyMode] Building.SetVisible overlay: {ex.Message}");
+            }
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(MoveAction), nameof(MoveAction.ExecuteDefault))]
+        public static void MoveAction_ExecuteDefault(MoveAction __instance, GameState gameState)
+        {
+            try
+            {
+                if (!IsRushTechMode()) return;
+                if (gameState?.Map == null || __instance?.Path == null || __instance.Path.Count == 0)
+                    return;
+
+                WorldCoordinates to = __instance.Path[0];
+                WorldCoordinates from = __instance.Path[__instance.Path.Count - 1];
+
+                RefreshMonumentsInCity(gameState, from);
+                if (from != to)
+                    RefreshMonumentsInCity(gameState, to);
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogWarning($"[Rush] MoveAction monument overlay: {ex.Message}");
+            }
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(TrainAction), nameof(TrainAction.ExecuteDefault))]
+        public static void TrainAction_ExecuteDefault(TrainAction __instance, GameState gameState)
+        {
+            try
+            {
+                if (!IsRushTechMode()) return;
+                if (gameState?.Map == null) return;
+
+                RefreshMonumentsInCity(gameState, __instance.Coordinates);
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogWarning($"[Rush] TrainAction monument overlay: {ex.Message}");
+            }
+        }
+
+        static void RefreshMonumentsInCity(GameState state, WorldCoordinates coords)
+        {
+            TileData tile = state.Map.GetTile(coords);
+            if (tile == null) return;
+
+            WorldCoordinates cityCoords =
+                (tile.improvement != null && tile.improvement.type == ImprovementData.Type.City)
+                    ? tile.coordinates
+                    : tile.rulingCityCoordinates;
+
+            if (cityCoords == WorldCoordinates.NULL_COORDINATES) return;
+
+            TileData city = state.Map.GetTile(cityCoords);
+            if (city?.improvement == null) return;
+            if (!Rush.AI_2.CityHasMonument(state, city)) return;
+
+            var all = UnityEngine.Object.FindObjectsOfType<Building>();
+            if (all == null) return;
+
+            foreach (var building in all)
+            {
+                if (building?.Tile?.Data == null) continue;
+                var d = building.Tile.Data;
+                if (d.improvement == null) continue;
+                if (!IsMonumentType(d.improvement.type)) continue;
+                if (d.rulingCityCoordinates != cityCoords) continue;
+
+                SyncMonumentOverlay(building);
             }
         }
     }
