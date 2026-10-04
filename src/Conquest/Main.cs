@@ -883,79 +883,87 @@ namespace Conquest
         // =========================================================================
         // E. Citadel Logics (general)
         // =========================================================================
-        // Replaced by dynamic tech tree
         [HarmonyPostfix]
         [HarmonyPatch(typeof(GameLogicData), nameof(GameLogicData.CanBuild))]
         private static void CanBuild_Citadel(GameLogicData __instance, GameState gameState, TileData tile, PlayerState playerState, ImprovementData improvement, ref bool __result)
         {
+            if (tile == null || playerState == null || improvement == null || gameState == null)
+            {
+                return;
+            }
+
             if (tile.improvement != null && improvement.type != ImprovementData.Type.Road) 
             {
                 __result = false;
                 return;
             }
 
-            PlayerState unitOwner;
-            gameState.TryGetPlayer(tile.unit.owner, out unitOwner);
-            if (tile.unit != null && tile.unit.owner != playerState.Id && !unitOwner.HasPeaceWith(playerState.Id))
+            if (tile.unit != null)
             {
-                __result = false;
-                return;   
-            }
-
-			if (improvement.HasAbility(ImprovementAbility.Type.Limited) && __instance.HasImprovementWithinCityBorders(gameState.Map, tile.rulingCityCoordinates, improvement.type))
-			{
-                __result = false;
-				return;
-			}
-
-            try
-            {
-                /*if (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
-                    && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                if (tile.unit.owner != playerState.Id)
                 {
-                    if (improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel"))
+                    if (gameState.TryGetPlayer(tile.unit.owner, out PlayerState unitOwner) && unitOwner != null)
                     {
-                        __result = false;
-                        return;
-                    }
-                }*/
-                
-                if (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
-                    && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
-                {
-                    return;
-                }
-
-                if (tile.rulingCityCoordinates != WorldCoordinates.NULL_COORDINATES)
-                {
-                    TileData rulingCity = gameState.Map.GetTile(tile.rulingCityCoordinates);
-                    AI_2.GetCitadelCache(gameState, playerState);
-
-                    if (AI_2.cityCitadelCornerCache.TryGetValue(rulingCity.coordinates, out TileData? targetedCorner)
-                        && targetedCorner != null
-                        && tile.coordinates.X == targetedCorner.coordinates.X
-                        && tile.coordinates.Y == targetedCorner.coordinates.Y
-                        && playerState.AutoPlay)
-                    {
-                        if (improvement.type != EnumCache<ImprovementData.Type>.GetType("citadel") && improvement.type != ImprovementData.Type.Road)
+                        if (!unitOwner.HasPeaceWith(playerState.Id))
                         {
-                            //Loader.modLogger?.LogInfo($"[Conquest] Reserved tile for citadel");
                             __result = false;
-                            return;
+                            return;   
                         }
                     }
                 }
+            }
 
-                if (improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel") && tile.owner == playerState.Id)
+            if (tile.rulingCityCoordinates != WorldCoordinates.NULL_COORDINATES)
+            {
+                if (improvement.HasAbility(ImprovementAbility.Type.Limited) && 
+                    __instance.HasImprovementWithinCityBorders(gameState.Map, tile.rulingCityCoordinates, improvement.type))
                 {
-                    int citadelCount = CountCityCitadel(gameState, tile);
-                    __result = !CityHasMaxCitadel(gameState, tile, playerState, citadelCount);
+                    __result = false;
+                    return;
                 }
             }
-            catch (Exception ex)
+
+            try             
             {
-                Loader.modLogger?.LogError($"[Conquest] Error in CanBuild Postfix: {ex}");
-            }            
+                if (gameState.Settings?.RulesGameMode != EnumCache<GameMode>.GetType("conquest")                     
+                    && gameState.Settings?.RulesGameMode != EnumCache<GameMode>.GetType("reign"))                 
+                {                     
+                    return;                 
+                }                  
+
+                if (tile.rulingCityCoordinates != WorldCoordinates.NULL_COORDINATES)                 
+                {                     
+                    TileData? rulingCity = gameState.Map.GetTile(tile.rulingCityCoordinates);                     
+                    if (rulingCity != null)
+                    {
+                        AI_2.GetCitadelCache(gameState, playerState);                      
+
+                        if (AI_2.cityCitadelCornerCache != null && 
+                            AI_2.cityCitadelCornerCache.TryGetValue(rulingCity.coordinates, out TileData? targetedCorner)                         
+                            && targetedCorner != null                         
+                            && tile.coordinates.X == targetedCorner.coordinates.X                         
+                            && tile.coordinates.Y == targetedCorner.coordinates.Y                         
+                            && playerState.AutoPlay)                     
+                        {                         
+                            if (improvement.type != EnumCache<ImprovementData.Type>.GetType("citadel") && improvement.type != ImprovementData.Type.Road)                         
+                            {                             
+                                __result = false;                             
+                                return;                         
+                            }                     
+                        }                     
+                    }
+                }                  
+
+                if (improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel") && tile.owner == playerState.Id)                 
+                {                     
+                    int citadelCount = CountCityCitadel(gameState, tile);                     
+                    __result = !CityHasMaxCitadel(gameState, tile, playerState, citadelCount);                 
+                }             
+            }             
+            catch (Exception ex)             
+            {                 
+                Loader.modLogger?.LogError($"[Conquest] Error in CanBuild Postfix: {ex}");             
+            }                     
         }
 
         /*[HarmonyPrefix]
