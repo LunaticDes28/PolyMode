@@ -910,7 +910,7 @@ namespace Conquest
 
             try
             {
-                if (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                /*if (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
                     && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
                 {
                     if (improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel"))
@@ -918,6 +918,12 @@ namespace Conquest
                         __result = false;
                         return;
                     }
+                }*/
+                
+                if (gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("conquest")
+                    && gameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
+                {
+                    return;
                 }
 
                 if (tile.rulingCityCoordinates != WorldCoordinates.NULL_COORDINATES)
