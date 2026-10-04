@@ -1709,7 +1709,7 @@ namespace Conquest
                                         var centerResult = MapAnalysis.ScanCityFromCenter(gameState.Map, gameState, cityTile, 5, player);
                                         Loader.modLogger?.LogInfo($"[Rush-Tech] Pre Monument cmd {i} is {bc.Type.GetDisplayName()} and score is {sc.score}");
                                         Loader.modLogger?.LogInfo($"[Rush-Tech] MapAnalysis result is Enemy = {centerResult.EnemyCityCount} & Owned = {centerResult.OwnedCityCount}");
-                                        mult *= (float)(1 - 0.15 * centerResult.EnemyCityCount + 0.05 * centerResult.OwnedCityCount);
+                                        mult *= (float)(1 - 0.20 * centerResult.EnemyCityCount + 0.05 * centerResult.OwnedCityCount);
                                         mult *= (float)(1 - 0.40 * Rush.AI_2.CountMonumentsInCity(gameState, cityTile));
                                         Loader.modLogger?.LogInfo($"[Rush-Tech] Monument count is {Rush.AI_2.CountMonumentsInCity(gameState, cityTile)}");
                                         Loader.modLogger?.LogInfo($"[Rush-Tech] Post Monument cmd {i} is {bc.Type.GetDisplayName()} and score is {sc.score * mult}");

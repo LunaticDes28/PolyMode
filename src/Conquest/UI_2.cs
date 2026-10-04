@@ -371,15 +371,15 @@ namespace Conquest
             } 
         }
 
-        [HarmonyPostfix]
+        [HarmonyPrefix]
         [HarmonyPatch(typeof(GameStatsScreen), nameof(GameStatsScreen.PopulatePlayers))]
-        public static void PopulatePlayers_Reign(GameStatsScreen __instance)
+        public static bool PopulatePlayers_Reign(GameStatsScreen __instance)
         {
             try
             {
                 if (__instance.GameSettings.RulesGameMode != EnumCache<GameMode>.GetType("reign"))
                 {
-                    return;
+                    return true;
                 }
 
                 Il2CppSystem.Collections.Generic.List<PlayerState> playersSortedByRank = GameManager.GameState.GetPlayersSortedByRank();
@@ -514,10 +514,12 @@ namespace Conquest
                         row.SetActive(true);
                     }
                 }
+                return false;
             }
             catch (Exception ex)
             {
                 Loader.modLogger?.LogError($"[Conquest-Backend] GameStatsScreen PopulatePlayers error: {ex}");
+                return true;
             } 
         }
 

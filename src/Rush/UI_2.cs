@@ -297,6 +297,7 @@ namespace Rush
             // ----- Turn limit (multi only) -----
             bool showTurn =
                 s.GameType != GameType.SinglePlayer
+                && s.GameType != GameType.PassAndPlay
                 && IsAlive(turnLimitList)
                 && turnLimitListData != null;
 

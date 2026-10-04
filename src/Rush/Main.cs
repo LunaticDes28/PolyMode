@@ -19,9 +19,7 @@ namespace Rush
         {
             try
             {
-                if (GameManager.PreliminaryGameSettings.GameType == GameType.Matchmaking
-                    || GameManager.PreliminaryGameSettings.GameType == GameType.Multiplayer
-                    || GameManager.PreliminaryGameSettings.GameType == GameType.PassAndPlay)
+                if (GameManager.PreliminaryGameSettings.GameType == GameType.Matchmaking || GameManager.PreliminaryGameSettings.GameType == GameType.Multiplayer)
                     return;
 
                 var ra = EnumCache<GameMode>.GetType("rusha");

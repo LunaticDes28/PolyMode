@@ -66,7 +66,12 @@ namespace Rush
         public static readonly Dictionary<long, int> TechLastGrantAge =
             new Dictionary<long, int>();
 
-        static int _lastTechTickTurn = -1;
+        /// <summary>Cached UI digit per monument (frozen until owner start/end commits).</summary>
+        public static readonly Dictionary<long, int> DisplayedTurns =
+            new Dictionary<long, int>();
+
+        public static readonly Dictionary<long, bool> DisplayedBlocked =
+            new Dictionary<long, bool>();
 
         public static int TechCount(PlayerState p)
             => p?.availableTech?.Count ?? 0;
@@ -110,16 +115,12 @@ namespace Rush
             return n;
         }
 
-        /// <summary>borderSize ≥2 → 2, else 3.</summary>
         public static int TechInterval(ImprovementState city)
         {
             if (city == null) return 3;
             return city.borderSize >= 2 ? 2 : 3;
         }
 
-        /// <summary>
-        /// Base interval + (monuments - 1) if more than one monument in the city.
-        /// </summary>
         public static int TechIntervalForCity(GameState state, TileData cityTile)
         {
             int interval = TechInterval(cityTile.improvement);
@@ -157,10 +158,18 @@ namespace Rush
             return false;
         }
 
-        /// <summary>
-        /// Grant up to <paramref name="need"/> cheapest unlockable techs.
-        /// Re-queries unlockables each time so multiple monuments can unlock different techs.
-        /// </summary>
+        static bool IsMonumentTile(TileData tile)
+        {
+            if (tile?.improvement == null) return false;
+            try { return tile.improvement.type.IsMonument(); }
+            catch
+            {
+                var ty = tile.improvement.type;
+                return ty >= ImprovementData.Type.Monument1
+                    && ty <= ImprovementData.Type.Monument7;
+            }
+        }
+
         public static bool TryGrantTech(GameState state, PlayerState player, int need)
         {
             if (state?.GameLogicData == null || player == null || need <= 0)
@@ -201,59 +210,49 @@ namespace Rush
             return granted > 0;
         }
 
-        public static void TickTechResearch(GameState state)
+        public static void TickTechResearchForPlayer(GameState state, PlayerState player)
         {
-            if (state?.Settings == null || state.Map?.Tiles == null) return;
+            if (state?.Settings == null || state.Map?.Tiles == null || player == null)
+                return;
             if (state.Settings.RulesGameMode != EnumCache<GameMode>.GetType("rushc"))
                 return;
+            if (!player.IsAlive(state)) return;
 
-            var grantsThisTick = new Dictionary<byte, int>();
+            int need = 0;
 
             foreach (var tile in state.Map.Tiles)
             {
-                if (tile.improvement == null) continue;
-                if (!tile.improvement.type.IsMonument()) continue;
-                if (tile.owner == 0 || tile.owner == 255) continue;
+                if (!IsMonumentTile(tile)) continue;
+                if (tile.owner != player.Id) continue;
 
                 var cityCoords = tile.rulingCityCoordinates;
                 if (cityCoords == WorldCoordinates.NULL_COORDINATES) continue;
 
                 TileData city = state.Map.GetTile(cityCoords);
                 if (city?.improvement == null) continue;
-
                 if (IsCityResearchBlocked(state, city)) continue;
 
-                if (!state.TryGetPlayer(tile.owner, out var player)) continue;
-                if (!player.IsAlive(state)) continue;
-
-                // IMPORTANT: interval from CITY, age from MONUMENT
                 int interval = TechIntervalForCity(state, city);
                 int age = tile.improvement.GetAge(state);
-                if (age <= 0 || age % interval != 0) continue;
+                if (age <= 0 || interval <= 0 || age % interval != 0) continue;
 
                 long k = TechCityKey(tile.coordinates);
                 if (TechLastGrantAge.TryGetValue(k, out int last) && last == age)
                     continue;
 
                 TechLastGrantAge[k] = age;
-
-                byte id = player.Id;
-                if (!grantsThisTick.ContainsKey(id))
-                    grantsThisTick[id] = 0;
-                grantsThisTick[id]++;
+                need++;
             }
 
-            foreach (var kv in grantsThisTick)
-            {
-                if (!state.TryGetPlayer(kv.Key, out var player)) continue;
-                TryGrantTech(state, player, kv.Value);
-            }
+            if (need > 0)
+                TryGrantTech(state, player, need);
+
+            CommitDisplayForPlayer(state, player.Id);
+
+            try { OverlayPatches.RefreshMonumentOverlaysForPlayer(player.Id); }
+            catch { }
         }
 
-        /// <summary>
-        /// Blocked if enemy unit in city territory, or certain mega units (any owner).
-        /// Friendly normal units do not block.
-        /// </summary>
         public static bool IsCityResearchBlocked(GameState state, TileData cityTile)
         {
             if (cityTile?.improvement == null
@@ -267,10 +266,12 @@ namespace Rush
                 if (t.rulingCityCoordinates != cityTile.coordinates) continue;
                 if (t.unit == null) continue;
 
-                PlayerState player;
-                state.TryGetPlayer(t.unit.owner, out player);
-                if (t.unit.owner != cityTile.owner && !player.HasPeaceWith(cityTile.owner))
-                    return true;
+                if (t.unit.owner != cityTile.owner)
+                {
+                    if (!state.TryGetPlayer(t.unit.owner, out var unitOwner)
+                        || !unitOwner.HasPeaceWith(cityTile.owner))
+                        return true;
+                }
 
                 var ut = t.unit.type;
                 if (ut == UnitData.Type.Giant
@@ -285,12 +286,12 @@ namespace Rush
             return false;
         }
 
-        /// <returns>Turns until next grant. blocked from city territory rules.</returns>
-        public static int GetResearchTurnsDisplay(
+        /// <summary>Raw countdown from age (no cache).</summary>
+        public static int ComputeResearchTurns(
             TileData monumentTile, GameState state, out bool blocked)
         {
             blocked = true;
-            if (monumentTile == null || state?.Map == null) return 0;
+            if (monumentTile?.improvement == null || state?.Map == null) return 0;
 
             var cityCoords = monumentTile.rulingCityCoordinates;
             if (cityCoords == WorldCoordinates.NULL_COORDINATES) return 0;
@@ -302,34 +303,121 @@ namespace Rush
 
             int interval = TechIntervalForCity(state, city);
             int age = monumentTile.improvement.GetAge(state);
+            if (interval <= 0) return 0;
+            if (age <= 0) return interval;
+
             int mod = age % interval;
-            return mod == 0 ? interval : interval - mod;
+            if (mod == 0) return interval;
+            return interval - mod;
         }
 
+        /// <summary>
+        /// Recompute and cache digit + blocked for all monuments owned by playerId.
+        /// Call on that player's StartTurn / EndTurn only.
+        /// </summary>
+        public static void CommitDisplayForPlayer(GameState state, byte playerId)
+        {
+            if (state?.Map?.Tiles == null) return;
+            if (playerId == 0 || playerId == 255) return;
+
+            foreach (var tile in state.Map.Tiles)
+            {
+                if (!IsMonumentTile(tile)) continue;
+                if (tile.owner != playerId) continue;
+
+                long k = TechCityKey(tile.coordinates);
+                bool blocked;
+                int turns = ComputeResearchTurns(tile, state, out blocked);
+                DisplayedTurns[k] = turns;
+                DisplayedBlocked[k] = blocked;
+            }
+        }
+
+        /// <summary>
+        /// UI path. refreshBlockedOnly: move/train — update (O)/(X), keep cached digit.
+        /// </summary>
+        public static int GetResearchTurnsDisplay(
+            TileData monumentTile, GameState state, out bool blocked)
+        {
+            return GetResearchTurnsDisplay(monumentTile, state, false, out blocked);
+        }
+
+        public static int GetResearchTurnsDisplay(
+            TileData monumentTile, GameState state, bool refreshBlockedOnly, out bool blocked)
+        {
+            blocked = true;
+            if (monumentTile?.improvement == null || state?.Map == null) return 0;
+
+            long k = TechCityKey(monumentTile.coordinates);
+
+            if (refreshBlockedOnly)
+            {
+                var cityCoords = monumentTile.rulingCityCoordinates;
+                if (cityCoords != WorldCoordinates.NULL_COORDINATES)
+                {
+                    TileData city = state.Map.GetTile(cityCoords);
+                    if (city?.improvement != null)
+                        blocked = IsCityResearchBlocked(state, city);
+                }
+                DisplayedBlocked[k] = blocked;
+
+                if (DisplayedTurns.TryGetValue(k, out int cached))
+                    return cached;
+
+                int t = ComputeResearchTurns(monumentTile, state, out blocked);
+                DisplayedTurns[k] = t;
+                DisplayedBlocked[k] = blocked;
+                return t;
+            }
+
+            if (DisplayedTurns.TryGetValue(k, out int turns)
+                && DisplayedBlocked.TryGetValue(k, out blocked))
+                return turns;
+
+            turns = ComputeResearchTurns(monumentTile, state, out blocked);
+            DisplayedTurns[k] = turns;
+            DisplayedBlocked[k] = blocked;
+            return turns;
+        }
+
+        /// <summary>
+        /// Call when a match ends or a new level loads so the next game
+        /// in the same process does not reuse grant/display state.
+        /// Process exit clears memory automatically.
+        /// </summary>
         public static void ClearTechSession()
         {
-            _lastTechTickTurn = -1;
             TechLastGrantAge.Clear();
-        }
-
-        public static void TryTickOnTurnAdvance(GameState state)
-        {
-            if (state == null) return;
-            int turn = (int)state.CurrentTurn;
-            if (turn == _lastTechTickTurn) return;
-            _lastTechTickTurn = turn;
-            TickTechResearch(state);
+            DisplayedTurns.Clear();
+            DisplayedBlocked.Clear();
         }
 
         [HarmonyPostfix]
-        [HarmonyPatch(typeof(GameState), nameof(GameState.EndPlayerTurn))]
-        static void EndPlayerTurn_TechTick(GameState __instance, bool newTurn)
+        [HarmonyPatch(typeof(StartTurnAction), nameof(StartTurnAction.ExecuteDefault))]
+        static void StartTurnAction_ExecuteDefault_TechTick(
+            StartTurnAction __instance, GameState gameState)
         {
-            try { TryTickOnTurnAdvance(__instance); }
+            try
+            {
+                if (gameState == null || __instance == null) return;
+                if (!gameState.TryGetPlayer(__instance.PlayerId, out var player)) return;
+                if (player.Id == 0 || player.Id == 255) return;
+
+                TickTechResearchForPlayer(gameState, player);
+            }
             catch (Exception ex)
             {
-                Loader.modLogger?.LogError($"[Rush-AI] TechTick: {ex.Message}");
+                Loader.modLogger?.LogError($"[Rush-AI] StartTurn TechTick: {ex.Message}");
             }
+        }
+
+        // Clear when a level loads so a new match never inherits old caches
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(GameManager), nameof(GameManager.LoadLevel))]
+        static void LoadLevel_ClearTechSession()
+        {
+            try { ClearTechSession(); }
+            catch { }
         }
     }
 }

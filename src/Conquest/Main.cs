@@ -23,7 +23,7 @@ namespace Conquest
                 bool isReign = UI_2.IsReignSelected;
 
                 //Loader.modLogger?.LogInfo("[Conquest-Map] Conquest Mode selected!");
-                if (GameManager.PreliminaryGameSettings.GameType == GameType.Matchmaking || GameManager.PreliminaryGameSettings.GameType == GameType.Multiplayer || GameManager.PreliminaryGameSettings.GameType == GameType.PassAndPlay) return;
+                if (GameManager.PreliminaryGameSettings.GameType == GameType.Matchmaking || GameManager.PreliminaryGameSettings.GameType == GameType.Multiplayer) return;
 
                 // Pseudo GameSettings in GameState
                 if (isConquest || GameManager.PreliminaryGameSettings.RulesGameMode == EnumCache<GameMode>.GetType("conquest")) 
@@ -884,7 +884,7 @@ namespace Conquest
         // E. Citadel Logics (general)
         // =========================================================================
         // Replaced by dynamic tech tree
-        /*[HarmonyPostfix]
+        [HarmonyPostfix]
         [HarmonyPatch(typeof(GameLogicData), nameof(GameLogicData.CanBuild))]
         private static void CanBuild_Citadel(GameLogicData __instance, GameState gameState, TileData tile, PlayerState playerState, ImprovementData improvement, ref bool __result)
         {
@@ -950,7 +950,7 @@ namespace Conquest
             {
                 Loader.modLogger?.LogError($"[Conquest] Error in CanBuild Postfix: {ex}");
             }            
-        }*/
+        }
 
         /*[HarmonyPrefix]
         [HarmonyPatch(typeof(BuildAction), nameof(BuildAction.ExecuteDefault))]

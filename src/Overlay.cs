@@ -157,9 +157,6 @@ namespace PolyMode
         }
     }
 
-    /// <summary>
-    /// Rush (rushc): research countdown (O)=active (X)=blocked.
-    /// </summary>
     public class MonumentOverlay : MonoBehaviour
     {
         public MonumentOverlay(IntPtr handle) : base(handle) { }
@@ -213,10 +210,7 @@ namespace PolyMode
         {
             if (label == null) return;
 
-            if (turnsLeft <= 0)
-                label.text = blocked ? "(X)" : "(O)";
-            else
-                label.text = blocked ? $"(X) {turnsLeft}" : $"(O) {turnsLeft}";
+            label.text = blocked ? $"(X) {turnsLeft}" : $"(O) {turnsLeft}";
 
             if (label.fontSharedMaterial != null)
                 label.fontSharedMaterial.renderQueue = 4000;
@@ -282,9 +276,6 @@ namespace PolyMode
 
     public class OverlayPatches
     {
-        // ---------------------------------------------------------------------
-        // Citadel (conquest / reign)
-        // ---------------------------------------------------------------------
         static bool IsCitadelMode()
         {
             var gs = GameManager.GameState;
@@ -351,7 +342,7 @@ namespace PolyMode
                 }
 
                 try { vanillaDisplay.ReturnToPool(); }
-                catch { /* ignore */ }
+                catch { }
 
                 var overlayObj = new GameObject("CitadelOverlay");
                 var overlayType = Il2CppType.Of<CitadelOverlay>();
@@ -415,9 +406,6 @@ namespace PolyMode
             }
         }
 
-        // ---------------------------------------------------------------------
-        // Monument research (rushc)
-        // ---------------------------------------------------------------------
         static bool IsMonumentType(ImprovementData.Type t)
         {
             try { return t.IsMonument(); }
@@ -451,14 +439,15 @@ namespace PolyMode
                 t.gameObject.SetActive(show);
         }
 
-        static void ApplyMonumentTurns(Building building, MonumentOverlay overlay)
+        static void ApplyMonumentTurns(
+            Building building, MonumentOverlay overlay, bool blockedOnly = false)
         {
             if (overlay == null || building == null) return;
             try
             {
                 bool blocked;
                 int turns = Rush.AI_2.GetResearchTurnsDisplay(
-                    building.Tile.Data, GameManager.GameState, out blocked);
+                    building.Tile.Data, GameManager.GameState, blockedOnly, out blocked);
                 overlay.SetTurns(turns, blocked, building);
             }
             catch
@@ -507,7 +496,7 @@ namespace PolyMode
                 }
 
                 try { vanillaDisplay.ReturnToPool(); }
-                catch { /* ignore */ }
+                catch { }
 
                 var overlayObj = new GameObject("MonumentOverlay");
                 var overlayType = Il2CppType.Of<MonumentOverlay>();
@@ -542,7 +531,7 @@ namespace PolyMode
                     overlay.label.fontStyle = FontStyles.Normal;
                 }
 
-                ApplyMonumentTurns(__instance, overlay);
+                ApplyMonumentTurns(__instance, overlay, blockedOnly: false);
 
                 bool explored = __instance.Tile != null && !__instance.Tile.IsHidden;
                 SetMonumentOverlayVisible(__instance, explored);
@@ -553,6 +542,7 @@ namespace PolyMode
             }
         }
 
+        // UpdateObject: visibility + cached label (does not advance other players)
         static void SyncMonumentOverlay(Building building)
         {
             try
@@ -565,7 +555,7 @@ namespace PolyMode
 
                 var overlay = t.GetComponent<MonumentOverlay>();
                 if (overlay != null)
-                    ApplyMonumentTurns(building, overlay);
+                    ApplyMonumentTurns(building, overlay, blockedOnly: false);
 
                 bool explored = !building.Tile.IsHidden;
                 SetMonumentOverlayVisible(building, explored);
@@ -577,9 +567,6 @@ namespace PolyMode
             }
         }
 
-        // ---------------------------------------------------------------------
-        // Shared Building hooks
-        // ---------------------------------------------------------------------
         [HarmonyPostfix]
         [HarmonyPatch(typeof(Building), nameof(Building.UpdateObject), new Type[] { })]
         public static void Building_UpdateObject(Building __instance)
@@ -636,9 +623,9 @@ namespace PolyMode
                 WorldCoordinates to = __instance.Path[0];
                 WorldCoordinates from = __instance.Path[__instance.Path.Count - 1];
 
-                RefreshMonumentsInCity(gameState, from);
+                RefreshMonumentsInCity(gameState, from, blockedOnly: true);
                 if (from != to)
-                    RefreshMonumentsInCity(gameState, to);
+                    RefreshMonumentsInCity(gameState, to, blockedOnly: true);
             }
             catch (Exception ex)
             {
@@ -655,7 +642,7 @@ namespace PolyMode
                 if (!IsRushTechMode()) return;
                 if (gameState?.Map == null) return;
 
-                RefreshMonumentsInCity(gameState, __instance.Coordinates);
+                RefreshMonumentsInCity(gameState, __instance.Coordinates, blockedOnly: true);
             }
             catch (Exception ex)
             {
@@ -663,7 +650,8 @@ namespace PolyMode
             }
         }
 
-        static void RefreshMonumentsInCity(GameState state, WorldCoordinates coords)
+        static void RefreshMonumentsInCity(
+            GameState state, WorldCoordinates coords, bool blockedOnly)
         {
             TileData tile = state.Map.GetTile(coords);
             if (tile == null) return;
@@ -690,6 +678,96 @@ namespace PolyMode
                 if (!IsMonumentType(d.improvement.type)) continue;
                 if (d.rulingCityCoordinates != cityCoords) continue;
 
+                var t = FindMonumentOverlay(building);
+                if (t == null) continue;
+                var overlay = t.GetComponent<MonumentOverlay>();
+                if (overlay != null)
+                    ApplyMonumentTurns(building, overlay, blockedOnly);
+
+                if (building.Tile != null)
+                    SetMonumentOverlayVisible(building, !building.Tile.IsHidden);
+            }
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(StartTurnAction), nameof(StartTurnAction.ExecuteDefault))]
+        public static void StartTurnAction_ExecuteDefault_Refresh(
+            StartTurnAction __instance, GameState gameState)
+        {
+            try
+            {
+                if (!IsRushTechMode() || __instance == null || gameState == null) return;
+                // AI_2 tick already commits; commit again is idempotent
+                Rush.AI_2.CommitDisplayForPlayer(gameState, __instance.PlayerId);
+                RefreshMonumentOverlaysForPlayer(__instance.PlayerId);
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogWarning($"[Rush] StartTurn overlay: {ex.Message}");
+            }
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(EndTurnAction), nameof(EndTurnAction.Execute))]
+        public static void EndTurnAction_Execute_Refresh(EndTurnAction __instance, GameState state)
+        {
+            try
+            {
+                if (!IsRushTechMode() || __instance == null || state == null) return;
+                Rush.AI_2.CommitDisplayForPlayer(state, __instance.PlayerId);
+                RefreshMonumentOverlaysForPlayer(__instance.PlayerId);
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogWarning($"[Rush] EndTurn overlay: {ex.Message}");
+            }
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(ExpandCityAction), nameof(ExpandCityAction.ExecuteDefault))]
+        public static void ExpandCityAction_ExecuteDefault_Refresh(ExpandCityAction __instance, GameState state)
+        {
+            try
+            {
+                if (!IsRushTechMode() || __instance == null || state == null) return;
+                Rush.AI_2.CommitDisplayForPlayer(state, __instance.PlayerId);
+                RefreshMonumentOverlaysForPlayer(__instance.PlayerId);
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogWarning($"[Rush] EndTurn overlay: {ex.Message}");
+            }
+        }
+
+        public static void RefreshMonumentOverlaysForPlayer(byte playerId)
+        {
+            if (!IsRushTechMode()) return;
+            if (playerId == 0 || playerId == 255) return;
+
+            var all = UnityEngine.Object.FindObjectsOfType<Building>();
+            if (all == null) return;
+
+            foreach (var building in all)
+            {
+                if (building?.Tile?.Data?.improvement == null) continue;
+                if (!IsMonumentType(building.Tile.Data.improvement.type)) continue;
+                if (building.Tile.Data.owner != playerId) continue;
+
+                SyncMonumentOverlay(building);
+            }
+        }
+
+        public static void RefreshAllMonumentOverlays()
+        {
+            if (!IsRushTechMode()) return;
+
+            var all = UnityEngine.Object.FindObjectsOfType<Building>();
+            if (all == null) return;
+
+            foreach (var building in all)
+            {
+                if (building?.Tile?.Data?.improvement == null) continue;
+                if (!IsMonumentType(building.Tile.Data.improvement.type)) continue;
                 SyncMonumentOverlay(building);
             }
         }
