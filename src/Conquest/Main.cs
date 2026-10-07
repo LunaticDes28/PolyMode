@@ -1292,6 +1292,8 @@ namespace Conquest
         {
             try
             {
+                validationError = "";
+                __result = true;
                 if (!__instance.PassesBasicValidation(state, out validationError))
                 {
                     __result = false;
@@ -1359,8 +1361,6 @@ namespace Conquest
                     __result = false;
                     //return false;
                 }
-                validationError = "";
-                __result = true;
                 //return false;
             }
             catch (Exception ex)
@@ -1822,6 +1822,8 @@ namespace Conquest
         {
             try
             {
+                validationError = "";
+                __result = true;
                 if (!__instance.PassesBasicValidation(state, out validationError))
                 {
                     __result = false;
@@ -1853,8 +1855,6 @@ namespace Conquest
                     __result = false;
                     //return false;
                 }
-                validationError = "";
-                __result = true;
                 //return false;
             }
             catch (Exception ex)
