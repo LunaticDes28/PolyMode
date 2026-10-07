@@ -1,6 +1,6 @@
 ﻿# PolyMode (PolyMod Extension of Polytopia)
 ![](https://img.shields.io/github/downloads/LunaticDes28/PolyMode/total)
-Check out our full wiki on https://tinyurl.com/mv3b7ynj or the mini [Wiki](https://github.com/LunaticDes28/PolyMode/wiki) section.
+Check out our full wiki on https://tinyurl.com/mv3b7ynj or the mini [Wiki](https://github.com/LunaticDes28/PolyMode/wiki) in the `Wiki` section.
 
 ## Installation
 Requires PolyMod
