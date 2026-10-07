@@ -169,6 +169,7 @@ namespace PolyMode
         }
         
         [HarmonyPrefix]
+        [HarmonyPriority(Priority.Last)]
         [HarmonyPatch(typeof(CommandTriggerUIUtils), nameof(CommandTriggerUIUtils.ShowCommandTrigger))]
         public static bool ShowCommandTrigger_CustomOptions(CommandTrigger commandTrigger)
         {
@@ -200,12 +201,15 @@ namespace PolyMode
                 return false;
             }
 
+            // From the already concated list
             CityReward[] allRewards = ImprovementDataExtensions.GetCityRewardsForLevel(improvementData, tile.improvement.level - 1);
 
+            // All vanilla and rewards from other mods
             CityReward[] notMyRewards = allRewards
                 .Where(reward => !CityRewardExtensionsManager.CustomExtensions.ContainsKey(reward.GetName()))
                 .ToArray();
 
+            // Rewards of my own mod
             CityReward[] myModRewards = GetCustomCityRewards(tile);
 
             CityReward[] cityRewardsForLevel = notMyRewards
@@ -221,35 +225,22 @@ namespace PolyMode
         }
 
         [HarmonyPostfix]
+        [HarmonyPriority(Priority.Last)]
         [HarmonyPatch(typeof(ImprovementDataExtensions), nameof(ImprovementDataExtensions.GetCityRewardsForLevel))]
         public static void GetCityRewardsForLevel_CustomOptions(
             ImprovementData data,
             int level,
             ref Il2CppStructArray<CityReward> __result)
         {
+            // Keep everything already there (vanilla or other mods)
             var list = new Il2CppSystem.Collections.Generic.List<CityReward>();
-
-            if (level == 1)
+            if (__result != null)
             {
-                list.Add(CityReward.Workshop);
-                list.Add(CityReward.Explorer);
-            }
-            else if (level == 2)
-            {
-                list.Add(CityReward.CityWall);
-                list.Add(CityReward.Resources);
-            }
-            else if (level == 3)
-            {
-                list.Add(CityReward.PopulationGrowth);
-                list.Add(CityReward.BorderGrowth);
-            }
-            else if (level >= 4)
-            {
-                list.Add(CityReward.Park);
-                list.Add(CityReward.SuperUnit);
+                for (int i = 0; i < __result.Length; i++)
+                    list.Add(__result[i]);
             }
 
+            // Concat my custom rewards
             if (CityRewardExtensionsManager.CustomExtensions != null)
             {
                 foreach (var kvp in CityRewardExtensionsManager.CustomExtensions)
@@ -262,13 +253,10 @@ namespace PolyMode
                     foreach (var req in extension.cityRequirements)
                     {
                         if (level == req.level && !list.Contains(customReward))
-                        {
                             list.Add(customReward);
-                        }
                     }
                 }
             }
-
             __result = (Il2CppStructArray<CityReward>)list.ToArray();
         }
 

@@ -30,7 +30,7 @@
         "English": "Rush (Star)"
     },
     "gamemode_rusha_description": {
-        "English": "Rush toward the throne of the Square. Become the king before everyone else."
+        "English": "Rush toward the throne of the Square. Become the king before time's up."
     },
     "gamemode_goal_rusha_description": {
         "English": "Rush for the wealth glory."
@@ -51,7 +51,7 @@
         "English": "Rush (Army)"
     },
     "gamemode_rushb_description": {
-        "English": "Rush toward the throne of the Square. Become the king before everyone else."
+        "English": "Rush toward the throne of the Square. Become the king before time's up."
     },
     "gamemode_goal_rushb_description": {
         "English": "Rush for the military glory."
@@ -78,7 +78,7 @@
         "English": "Rush (Tech)"
     },
     "gamemode_rushc_description": {
-        "English": "Rush toward the throne of the Square. Become the king before everyone else."
+        "English": "Rush toward the throne of the Square. Become the king before time's up."
     },
     "gamemode_goal_rushc_description": {
         "English": "Rush for the civilization glory."
