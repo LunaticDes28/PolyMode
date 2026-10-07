@@ -1,5 +1,5 @@
 ﻿# PolyMode (PolyMod Extension of Polytopia)
-![](https://img.shields.io/github/downloads/LunaticDes28/PolyMode/total)
+[![GitHub All Releases](https://img.shields.io/github/downloads/LunaticDes28/PolyMode/total)](https://github.com/LunaticDes28/PolyMode/tree/PolyMode_v2.2.0)
 Check out our full wiki on https://tinyurl.com/mv3b7ynj or the mini [Wiki](https://github.com/LunaticDes28/PolyMode/wiki) in the `Wiki` section.
 
 ## Installation
