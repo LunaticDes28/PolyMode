@@ -10,6 +10,7 @@ using Il2CppSystem.Reflection;
 using System.Reflection;
 using BindingFlags = System.Reflection.BindingFlags;
 using UnityEngine.UIElements.UIR;
+using System;
 
 namespace Rush
 {
@@ -35,6 +36,26 @@ namespace Rush
 
         static float _ui2SavedNorm = 1f;
         static bool _ui2HasSaved;
+
+        // -------------------------------------------------------------------------
+        // Persistent turn-limit preference for SinglePlayer + PassAndPlay
+        // -------------------------------------------------------------------------
+        const string PrefTurnLimitKey = "Rush.Local.TurnLimit";
+
+        public static int PreferredLocalTurnLimit
+        {
+            get
+            {
+                int v = PlayerPrefs.GetInt(PrefTurnLimitKey, 30); // default 30
+                if (v != 20 && v != 30 && v != 50) v = 30;
+                return v;
+            }
+            set
+            {
+                PlayerPrefs.SetInt(PrefTurnLimitKey, value);
+                PlayerPrefs.Save();
+            }
+        }
 
         static bool IsRushMode()
         {
@@ -294,18 +315,27 @@ namespace Rush
                 if (descH < minDescH) descH = minDescH;
             }
 
-            // ----- Turn limit (multi only) -----
+            // ----- Turn limit (SP + PassAndPlay + Multi) -----
             bool showTurn =
-                s.GameType != GameType.SinglePlayer
-                && s.GameType != GameType.PassAndPlay
+                (s.GameType == GameType.SinglePlayer
+                 || s.GameType == GameType.PassAndPlay
+                 || s.GameType == GameType.Matchmaking
+                 || s.GameType == GameType.Multiplayer
+                 || s.GameType == GameType.Competitive)
                 && IsAlive(turnLimitList)
                 && turnLimitListData != null;
 
             float turnH = 0f;
             if (showTurn)
             {
-                int turnIndex = 1;
+                int turnIndex = 1; // default 30
+                int preferred = PreferredLocalTurnLimit;
+
+                // For multiplayer still honour ScoreLimit if already set
                 int limit = s.rules.ScoreLimit;
+                if (s.GameType == GameType.SinglePlayer || s.GameType == GameType.PassAndPlay)
+                    limit = preferred;
+
                 if (limit == 20) turnIndex = 0;
                 else if (limit == 30) turnIndex = 1;
                 else if (limit == 50) turnIndex = 2;
@@ -544,7 +574,7 @@ namespace Rush
                 bool trigger =
                     (gt == GameType.SinglePlayer && label == Localization.Get("gamemode.conquest"))
                     || ((gt == GameType.Competitive || gt == GameType.Multiplayer
-                        || gt == GameType.Matchmaking || gt == GameType.PassAndPlay)
+                         || gt == GameType.Matchmaking || gt == GameType.PassAndPlay)
                         && label == Localization.Get("gamemode.reign"));
 
                 if (!trigger) return;
@@ -572,7 +602,7 @@ namespace Rush
 
                 if (selectedText.Equals("Rush", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (RushTurnLimit <= 0) RushTurnLimit = 30;
+                    if (RushTurnLimit <= 0) RushTurnLimit = PreferredLocalTurnLimit;
                     if (GameManager.PreliminaryGameSettings.rules.ScoreLimit <= 0)
                         GameManager.PreliminaryGameSettings.rules.ScoreLimit = RushTurnLimit;
 
@@ -716,37 +746,28 @@ namespace Rush
                 EnsureRushLists(__instance);
 
                 var gt = GameManager.PreliminaryGameSettings.GameType;
-                if (gt == GameType.SinglePlayer)
-                {
-                    goalListData = new UIHorizontalListData(3, "Goal");
-                    goalListData.AddItem("Star", 1);
-                    goalListData.AddItem("Army", 2);
-                    goalListData.AddItem("Tech", 3);
 
-                    turnLimitListData = new UIHorizontalListData(3, "Turn Limit");
-                    turnLimitListData.AddItem("30", 2);
-                    if (GameManager.PreliminaryGameSettings.rules.ScoreLimit <= 0)
-                        GameManager.PreliminaryGameSettings.rules.ScoreLimit = 30;
-                }
-                else if (gt == GameType.Matchmaking || gt == GameType.Multiplayer
-                    || gt == GameType.PassAndPlay || gt == GameType.Competitive)
-                {
-                    goalListData = new UIHorizontalListData(3, "Goal");
-                    goalListData.AddItem("Star", 1);
-                    goalListData.AddItem("Army", 2);
-                    goalListData.AddItem("Tech", 3);
+                // Both SP and multi (including PassAndPlay) get the same goal + turn-limit lists
+                goalListData = new UIHorizontalListData(3, "Goal");
+                goalListData.AddItem("Star", 1);
+                goalListData.AddItem("Army", 2);
+                goalListData.AddItem("Tech", 3);
 
-                    turnLimitListData = new UIHorizontalListData(3, "Turn Limit");
-                    turnLimitListData.AddItem("20", 1);
-                    turnLimitListData.AddItem("30", 2);
-                    turnLimitListData.AddItem("50", 3);
+                turnLimitListData = new UIHorizontalListData(3, "Turn Limit");
+                turnLimitListData.AddItem("20", 1);
+                turnLimitListData.AddItem("30", 2);
+                turnLimitListData.AddItem("50", 3);
+
+                // Seed ScoreLimit from sticky preference for local modes
+                if (gt == GameType.SinglePlayer || gt == GameType.PassAndPlay)
+                {
                     if (GameManager.PreliminaryGameSettings.rules.ScoreLimit <= 0)
-                        GameManager.PreliminaryGameSettings.rules.ScoreLimit = 30;
+                        GameManager.PreliminaryGameSettings.rules.ScoreLimit = PreferredLocalTurnLimit;
                 }
                 else
                 {
-                    HideRushLists();
-                    return;
+                    if (GameManager.PreliminaryGameSettings.rules.ScoreLimit <= 0)
+                        GameManager.PreliminaryGameSettings.rules.ScoreLimit = 30;
                 }
 
                 PlaceRushLists(__instance, screenSize);
@@ -770,14 +791,23 @@ namespace Rush
         {
             if (turnLimitListData == null) return;
             int id = turnLimitListData.GetId(index);
-            if (id == 1) RushTurnLimit = 20;
-            else if (id == 2) RushTurnLimit = 30;
-            else if (id == 3) RushTurnLimit = 50;
+
+            int limit;
+            if (id == 1) limit = 20;
+            else if (id == 2) limit = 30;
+            else if (id == 3) limit = 50;
             else return;
 
-            GameManager.PreliminaryGameSettings.rules.ScoreLimit = RushTurnLimit;
+            RushTurnLimit = limit;
+            GameManager.PreliminaryGameSettings.rules.ScoreLimit = limit;
             GameManager.PreliminaryGameSettings.SaveToDisk();
-            Loader.modLogger?.LogInfo($"[Rush-Map] TurnLimit={RushTurnLimit}");
+
+            // Persist for local modes (SP + PassAndPlay)
+            var gt = GameManager.PreliminaryGameSettings.GameType;
+            if (gt == GameType.SinglePlayer || gt == GameType.PassAndPlay)
+                PreferredLocalTurnLimit = limit;
+
+            Loader.modLogger?.LogInfo($"[Rush-Map] TurnLimit={limit}");
         }
 
         // =========================================================================
@@ -944,7 +974,7 @@ namespace Rush
                     if (candidate.currency > currentMax.currency)
                         maxIndex = j;
                     else if (candidate.currency == currentMax.currency
-                        && candidate.score > currentMax.score)
+                             && candidate.score > currentMax.score)
                         maxIndex = j;
                 }
 
@@ -1069,47 +1099,54 @@ namespace Rush
             }
         }
 
-        [HarmonyPostfix]
+        [HarmonyPrefix]
         [HarmonyPatch(typeof(GameModeButtonWrapper), nameof(GameModeButtonWrapper.OnButtonClicked))]
-        public static void OnButtonClicked_GamemodeInfo(
+        public static bool OnButtonClicked_GamemodeInfo(
             GameModeButtonWrapper __instance,
             int id,
             UnityEngine.EventSystems.BaseEventData? eventData = null)
         {
             try
             {
-                var mode = GameManager.GameState.Settings.RulesGameMode;
-                string modeName = "";
-                if (mode == EnumCache<GameMode>.GetType("rusha"))
-                    modeName = "Rush (Star)";
-                else if (mode == EnumCache<GameMode>.GetType("rushb"))
-                    modeName = "Rush (Army)";
-                else if (mode == EnumCache<GameMode>.GetType("rushc"))
-                    modeName = "Rush (Tech)";
-                else
-                    return;
-
-                BasicPopup basicPopup = PopupManager.GetBasicPopup();
-                basicPopup.Header = LocalizationUtils.CapitalizeString(modeName);
-
-                string? text2 = Localization.Get(
-                    GameModeUtils.GetDescription(__instance.currentGameMode),
-                    (Il2CppReferenceArray<Il2CppSystem.Object>)Array.Empty<Il2CppSystem.Object>());
-                basicPopup.Description = text2;
-                basicPopup.buttonData = new PopupBase.PopupButtonData[]
+                if (IsRushMode())
                 {
-                    new PopupBase.PopupButtonData(
-                        "buttons.back",
-                        PopupBase.PopupButtonData.States.Selected,
-                        null, -1, true, null)
-                };
-                basicPopup.Show(InputManager.GetInputPosition());
+                    var mode = GameManager.GameState.Settings.RulesGameMode;
+                    string modeName = "";
+                    if (mode == EnumCache<GameMode>.GetType("rusha"))
+                        modeName = "Rush (Star)";
+                    else if (mode == EnumCache<GameMode>.GetType("rushb"))
+                        modeName = "Rush (Army)";
+                    else if (mode == EnumCache<GameMode>.GetType("rushc"))
+                        modeName = "Rush (Tech)";
 
-                Loader.modLogger?.LogInfo("[Rush-Backend] OnButtonClicked finished!");
+                    BasicPopup basicPopup = PopupManager.GetBasicPopup();
+                    basicPopup.Header = LocalizationUtils.CapitalizeString(modeName);
+
+                    string? text2 = Localization.Get(
+                        GameModeUtils.GetDescription(__instance.currentGameMode),
+                        (Il2CppReferenceArray<Il2CppSystem.Object>)Array.Empty<Il2CppSystem.Object>());
+                    string? text3 = Localization.Get(
+                        GetGoalDescription(__instance.currentGameMode),
+                        (Il2CppReferenceArray<Il2CppSystem.Object>)Array.Empty<Il2CppSystem.Object>());
+                    basicPopup.Description = $"{text2}\n\n{text3}";
+                    basicPopup.buttonData = new PopupBase.PopupButtonData[]
+                    {
+                        new PopupBase.PopupButtonData(
+                            "buttons.back",
+                            PopupBase.PopupButtonData.States.Selected,
+                            null, -1, true, null)
+                    };
+                    basicPopup.Show(InputManager.GetInputPosition());
+
+                    Loader.modLogger?.LogInfo("[Rush-Backend] OnButtonClicked finished!");
+                    return false;
+                }
+                return true;
             }
             catch (Exception ex)
             {
                 Loader.modLogger?.LogError($"[Rush-Backend] GameModeButtonWrapper OnButtonClicked: {ex}");
+                return true;
             }
         }
 
@@ -1130,6 +1167,17 @@ namespace Rush
             {
                 Loader.modLogger?.LogError($"[Rush-Backend] GameModeUtils error: {ex}");
             }
+        }
+
+        public static string GetGoalDescription(GameMode gameMode)
+        {
+            if (gameMode == EnumCache<GameMode>.GetType("rusha"))
+                return "gamemode.goal.rusha.description";
+            else if (gameMode == EnumCache<GameMode>.GetType("rushb"))
+                return "gamemode.goal.rushb.description";
+            else if (gameMode == EnumCache<GameMode>.GetType("rushc"))
+                return "gamemode.goal.rushc.description";
+            return string.Empty;
         }
     }
 }

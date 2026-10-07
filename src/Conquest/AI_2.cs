@@ -1440,18 +1440,18 @@ namespace Conquest
                 }
 
                 if (gameState.Settings.RulesGameMode == EnumCache<GameMode>.GetType("conquest")
-                        || gameState.Settings.RulesGameMode == EnumCache<GameMode>.GetType("reign"))
+                    || gameState.Settings.RulesGameMode == EnumCache<GameMode>.GetType("reign"))
+                {
+                    var destroy = TryFindCitadelCornerDestroy(gameState, player);
+                    if (destroy != null)
                     {
-                        var destroy = TryFindCitadelCornerDestroy(gameState, player);
-                        if (destroy != null)
+                        managed.Add(new AI.ScoredCommand
                         {
-                            managed.Add(new AI.ScoredCommand
-                            {
-                                command = destroy,
-                                score = 180f // high enough to beat weak improves; tune 150–250
-                            });
-                        }
+                            command = destroy,
+                            score = 180f // high enough to beat weak improves; tune 150–250
+                        });
                     }
+                }
 
                 // Sort by vanilla score first — only reweight top N
                 managed.Sort((a, b) => b.score.CompareTo(a.score));

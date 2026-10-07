@@ -570,9 +570,9 @@ namespace Conquest
             } 
         }
 
-        [HarmonyPostfix]
+        [HarmonyPrefix]
         [HarmonyPatch(typeof(GameModeButtonWrapper), nameof(GameModeButtonWrapper.OnButtonClicked))]
-        public static void OnButtonClicked_GamemodeInfo(GameModeButtonWrapper __instance, int id, UnityEngine.EventSystems.BaseEventData? eventData = null)
+        public static bool OnButtonClicked_GamemodeInfo(GameModeButtonWrapper __instance, int id, UnityEngine.EventSystems.BaseEventData? eventData = null)
         {
             try
             {
@@ -604,11 +604,14 @@ namespace Conquest
                     basicPopup.Show(InputManager.GetInputPosition());  
 
                     Loader.modLogger?.LogInfo("[Conquest-Backend] OnButtonClicked finished!");
+                    return false;
                 }
+                return true;
             }
             catch (Exception ex)
             {
                 Loader.modLogger?.LogError($"[Conquest-Backend] GameModeButtonWrapper error: {ex}");
+                return true;
             }
         }
 

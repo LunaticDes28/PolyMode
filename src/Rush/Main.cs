@@ -19,7 +19,8 @@ namespace Rush
         {
             try
             {
-                if (GameManager.PreliminaryGameSettings.GameType == GameType.Matchmaking || GameManager.PreliminaryGameSettings.GameType == GameType.Multiplayer)
+                if (GameManager.PreliminaryGameSettings.GameType == GameType.Matchmaking
+                    || GameManager.PreliminaryGameSettings.GameType == GameType.Multiplayer)
                     return;
 
                 var ra = EnumCache<GameMode>.GetType("rusha");
@@ -43,10 +44,22 @@ namespace Rush
                 state.Settings.RulesGameMode = mode;
                 GameManager.PreliminaryGameSettings.RulesGameMode = mode;
 
-                if (GameManager.PreliminaryGameSettings.rules.ScoreLimit == 0)
+                // ---------------------------------------------------------------
+                // Turn limit: use PlayerPrefs for local modes, ScoreLimit otherwise
+                // ---------------------------------------------------------------
+                var gt = GameManager.PreliminaryGameSettings.GameType;
+                if (gt == GameType.SinglePlayer || gt == GameType.PassAndPlay)
+                {
+                    UI_2.RushTurnLimit = UI_2.PreferredLocalTurnLimit;
+                }
+                else if (GameManager.PreliminaryGameSettings.rules.ScoreLimit == 0)
+                {
                     UI_2.RushTurnLimit = 30;
+                }
                 else
+                {
                     UI_2.RushTurnLimit = GameManager.PreliminaryGameSettings.rules.ScoreLimit;
+                }
 
                 state.Settings.rules.TurnLimit = UI_2.RushTurnLimit;
 
@@ -206,15 +219,14 @@ namespace Rush
 
         [HarmonyPostfix]
         [HarmonyPatch(typeof(GameLogicData), nameof(GameLogicData.GetTechPrice))]
-        private static void GetTechPrice_Rushc(GameLogicData __instance, TechData techData, PlayerState playerState, GameState state, ref int __result)
+        private static void GetTechPrice_Rushc(
+            GameLogicData __instance, TechData techData, PlayerState playerState, GameState state, ref int __result)
         {
             if (state == null || techData == null) return;
             try
             {
                 if (GameManager.GameState.Settings.RulesGameMode != EnumCache<GameMode>.GetType("rushc"))
-                {
                     return;
-                };
 
                 if (techData == null || techData.cost == 0)
                 {
@@ -231,7 +243,7 @@ namespace Rush
                     float num2 = 0.66666f;
                     num *= num2;
                 }
-                __result =  (int)Math.Ceiling((double)num);
+                __result = (int)Math.Ceiling((double)num);
             }
             catch (Exception ex)
             {
