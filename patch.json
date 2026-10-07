@@ -116,8 +116,12 @@
 				}
 			],
 			"improvementAbilities": [
-				"citadel",
-				"embark"
+				"citadel"
+			],
+			"routes": [
+				"ocean",
+				"water",
+				"wetland"
 			],
 			"idx": -1
 		}

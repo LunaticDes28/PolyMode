@@ -157,6 +157,10 @@ namespace PolyMode
         }
     }
 
+    /// <summary>
+    /// Same visual pipeline as CitadelOverlay / CityStatusDisplay name plate.
+    /// Text = turns number only; red when blocked.
+    /// </summary>
     public class MonumentOverlay : MonoBehaviour
     {
         public MonumentOverlay(IntPtr handle) : base(handle) { }
@@ -210,11 +214,15 @@ namespace PolyMode
         {
             if (label == null) return;
 
-            label.text = blocked ? $"(X) {turnsLeft}" : $"(O) {turnsLeft}";
+            label.text = turnsLeft.ToString();
+            label.color = blocked ? Color.red : Color.white;
+            label.alignment = TextAlignmentOptions.Center;
+            label.fontStyle = FontStyles.Normal;
 
             if (label.fontSharedMaterial != null)
                 label.fontSharedMaterial.renderQueue = 4000;
 
+            // Same plate treatment as CitadelOverlay.SetCitadel
             if (background != null)
             {
                 if (background.sprite == null)
@@ -276,6 +284,13 @@ namespace PolyMode
 
     public class OverlayPatches
     {
+        // false = CityStatusDisplay / citadel plate (ACTIVE)
+        // true  = UnitStatusDisplay HP chip (kept for switch-back)
+        const bool UseUnitStatusStyle = false;
+
+        // ---------------------------------------------------------------------
+        // Citadel
+        // ---------------------------------------------------------------------
         static bool IsCitadelMode()
         {
             var gs = GameManager.GameState;
@@ -296,7 +311,8 @@ namespace PolyMode
             var t = FindCitadelOverlay(building);
             if (t == null) return;
 
-            bool show = visible && GameManager.debugShowGameUI;
+            bool explored = building?.Tile != null && !building.Tile.IsHidden;
+            bool show = visible && explored && GameManager.debugShowGameUI;
             if (t.gameObject.activeSelf != show)
                 t.gameObject.SetActive(show);
         }
@@ -406,6 +422,9 @@ namespace PolyMode
             }
         }
 
+        // ---------------------------------------------------------------------
+        // Monument
+        // ---------------------------------------------------------------------
         static bool IsMonumentType(ImprovementData.Type t)
         {
             try { return t.IsMonument(); }
@@ -434,9 +453,111 @@ namespace PolyMode
             var t = FindMonumentOverlay(building);
             if (t == null) return;
 
-            bool show = visible && GameManager.debugShowGameUI;
+            bool explored = building?.Tile != null && !building.Tile.IsHidden;
+            bool show = visible && explored && GameManager.debugShowGameUI;
             if (t.gameObject.activeSelf != show)
                 t.gameObject.SetActive(show);
+        }
+
+        static void ExtractCityStatusStyle(
+            out TMP_FontAsset? font,
+            out Material? fontMat,
+            out Sprite? bgSprite)
+        {
+            font = null;
+            fontMat = null;
+            bgSprite = null;
+
+            try
+            {
+                var cityDisp = ObjectPool.GetPooledObject<CityStatusDisplay>("CityStatusDisplay");
+                if (cityDisp == null) return;
+
+                try
+                {
+                    if (cityDisp.nameContainer != null)
+                    {
+                        if (cityDisp.nameContainer.bg != null)
+                            bgSprite = cityDisp.nameContainer.bg.sprite;
+
+                        if (cityDisp.nameContainer.label != null)
+                        {
+                            font = cityDisp.nameContainer.label.font;
+                            fontMat = cityDisp.nameContainer.label.fontSharedMaterial;
+                        }
+                    }
+                }
+                finally
+                {
+                    try { cityDisp.ReturnToPool(); }
+                    catch { }
+                }
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogWarning($"[Rush] CityStatusDisplay extract: {ex.Message}");
+            }
+        }
+
+        // Kept for switch-back (UseUnitStatusStyle = true)
+        static void ExtractUnitHpStyle(
+            out TMP_FontAsset? font,
+            out Material? fontMat,
+            out float fontSize,
+            out Vector3 labelScale,
+            out Sprite? bgSprite)
+        {
+            font = null;
+            fontMat = null;
+            fontSize = 1.05f;
+            labelScale = Vector3.one;
+            bgSprite = null;
+
+            try
+            {
+                var unitDisp = ObjectPool.GetPooledObject<UnitStatusDisplay>("UnitStatusDisplay");
+                if (unitDisp != null)
+                {
+                    try
+                    {
+                        if (unitDisp.healthLabel != null)
+                        {
+                            font = unitDisp.healthLabel.font;
+                            fontMat = unitDisp.healthLabel.fontSharedMaterial;
+                            if (unitDisp.healthLabel.fontSize > 0.01f)
+                                fontSize = unitDisp.healthLabel.fontSize;
+
+                            var s = unitDisp.healthLabel.transform.localScale;
+                            if (s.x > 0.001f)
+                                labelScale = s;
+
+                            if (unitDisp.healthContainer != null)
+                            {
+                                var cs = unitDisp.healthContainer.localScale;
+                                if (cs.x > 0.001f)
+                                    labelScale = Vector3.Scale(labelScale, cs);
+                            }
+                        }
+
+                        if (unitDisp.defenceBonusBg0 != null)
+                            bgSprite = unitDisp.defenceBonusBg0;
+                        else if (unitDisp.healthBg != null && unitDisp.healthBg.sprite != null)
+                            bgSprite = unitDisp.healthBg.sprite;
+                    }
+                    finally
+                    {
+                        try { unitDisp.ReturnToPool(); }
+                        catch { }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogWarning($"[Rush] UnitStatusDisplay extract: {ex.Message}");
+            }
+
+            if (font != null) return;
+            ExtractCityStatusStyle(out font, out fontMat, out bgSprite);
         }
 
         static void ApplyMonumentTurns(
@@ -466,37 +587,37 @@ namespace PolyMode
                 if (__instance == null || data == null) return;
                 if (!IsMonumentType(data.type)) return;
                 if (__instance.transform == null) return;
-                if (__instance.transform.Find("MonumentOverlay") != null) return;
 
-                var vanillaDisplay = ObjectPool.GetPooledObject<CityStatusDisplay>("CityStatusDisplay");
-                if (vanillaDisplay == null) return;
+                // Force citadel-style recreate if an old unit-style overlay is left over
+                var existing = __instance.transform.Find("MonumentOverlay");
+                if (existing != null)
+                    UnityEngine.Object.Destroy(existing.gameObject);
 
-                Sprite? officialBgSprite = null;
                 TMP_FontAsset? officialFont = null;
                 Material? officialFontMaterial = null;
+                Sprite? officialBgSprite = null;
+                float fontSize = 1.25f;
+                Vector3 labelScale = Vector3.one;
 
-                try
+                if (UseUnitStatusStyle)
                 {
-                    if (vanillaDisplay.nameContainer != null)
-                    {
-                        if (vanillaDisplay.nameContainer.bg != null)
-                            officialBgSprite = vanillaDisplay.nameContainer.bg.sprite;
-
-                        if (vanillaDisplay.nameContainer.label != null)
-                        {
-                            officialFont = vanillaDisplay.nameContainer.label.font;
-                            officialFontMaterial = vanillaDisplay.nameContainer.label.fontSharedMaterial;
-                        }
-                    }
+                    ExtractUnitHpStyle(
+                        out officialFont,
+                        out officialFontMaterial,
+                        out fontSize,
+                        out labelScale,
+                        out officialBgSprite);
                 }
-                catch (Exception ex)
+                else
                 {
-                    Loader.modLogger?.LogWarning(
-                        $"[Rush] Failed to extract CityStatusDisplay assets: {ex.Message}");
+                    // Same extract path as citadel
+                    ExtractCityStatusStyle(
+                        out officialFont,
+                        out officialFontMaterial,
+                        out officialBgSprite);
+                    fontSize = 1.25f;
+                    labelScale = Vector3.one;
                 }
-
-                try { vanillaDisplay.ReturnToPool(); }
-                catch { }
 
                 var overlayObj = new GameObject("MonumentOverlay");
                 var overlayType = Il2CppType.Of<MonumentOverlay>();
@@ -511,12 +632,20 @@ namespace PolyMode
                 overlayObj.transform.SetParent(__instance.transform, false);
                 overlayObj.transform.rotation = Quaternion.identity;
                 overlayObj.transform.localScale = Vector3.one;
-                overlayObj.transform.localPosition = new Vector3(0f, -0.1f, 0f);
+
+                // Same anchor as citadel name plate
+                if (UseUnitStatusStyle)
+                    overlayObj.transform.localPosition = new Vector3(0.28f, 0.12f, 0f);
+                else
+                    overlayObj.transform.localPosition = new Vector3(0f, -0.1f, 0f);
 
                 if (officialBgSprite != null && overlay.background != null)
                 {
                     overlay.background.sprite = officialBgSprite;
-                    overlay.background.drawMode = SpriteDrawMode.Sliced;
+                    overlay.background.drawMode = UseUnitStatusStyle
+                        ? SpriteDrawMode.Simple
+                        : SpriteDrawMode.Sliced;
+                    overlay.background.enabled = true;
                 }
 
                 if (overlay.label != null)
@@ -526,9 +655,10 @@ namespace PolyMode
                     if (officialFontMaterial != null)
                         overlay.label.fontSharedMaterial = officialFontMaterial;
 
-                    overlay.label.fontSize = 1.25f;
+                    overlay.label.fontSize = fontSize;
                     overlay.label.alignment = TextAlignmentOptions.Center;
                     overlay.label.fontStyle = FontStyles.Normal;
+                    overlay.label.transform.localScale = labelScale;
                 }
 
                 ApplyMonumentTurns(__instance, overlay, blockedOnly: false);
@@ -542,7 +672,6 @@ namespace PolyMode
             }
         }
 
-        // UpdateObject: visibility + cached label (does not advance other players)
         static void SyncMonumentOverlay(Building building)
         {
             try
@@ -697,7 +826,6 @@ namespace PolyMode
             try
             {
                 if (!IsRushTechMode() || __instance == null || gameState == null) return;
-                // AI_2 tick already commits; commit again is idempotent
                 Rush.AI_2.CommitDisplayForPlayer(gameState, __instance.PlayerId);
                 RefreshMonumentOverlaysForPlayer(__instance.PlayerId);
             }
@@ -725,7 +853,8 @@ namespace PolyMode
 
         [HarmonyPostfix]
         [HarmonyPatch(typeof(ExpandCityAction), nameof(ExpandCityAction.ExecuteDefault))]
-        public static void ExpandCityAction_ExecuteDefault_Refresh(ExpandCityAction __instance, GameState state)
+        public static void ExpandCityAction_ExecuteDefault_Refresh(
+            ExpandCityAction __instance, GameState state)
         {
             try
             {
@@ -735,7 +864,7 @@ namespace PolyMode
             }
             catch (Exception ex)
             {
-                Loader.modLogger?.LogWarning($"[Rush] EndTurn overlay: {ex.Message}");
+                Loader.modLogger?.LogWarning($"[Rush] ExpandCity overlay: {ex.Message}");
             }
         }
 

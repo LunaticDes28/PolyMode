@@ -267,10 +267,8 @@ namespace Conquest
 
                 // 4. 執行與原版完全相同的安放與註冊邏輯
                 preferredTile.owner = player.Id;
-                capitals.Add(preferredTile); // 直接寫入 IL2CPP 的 List，洗牌邏輯會完美同步！
+                capitals.Add(preferredTile);
                 __result = true; 
-
-                // 5. 返回 false 成功攔截，不再執行原版方法
                 return false; 
             }
             catch (Exception ex)
@@ -968,7 +966,7 @@ namespace Conquest
 
         /*[HarmonyPrefix]
         [HarmonyPatch(typeof(BuildAction), nameof(BuildAction.ExecuteDefault))]
-        private static bool BuildAction__DynamicCost(BuildAction __instance, GameState gameState)
+        private static bool BuildAction_DynamicCost(BuildAction __instance, GameState gameState)
         {
             try
             {
@@ -1038,6 +1036,18 @@ namespace Conquest
                     if (improvementData.type != EnumCache<ImprovementData.Type>.GetType("citadel"))
                     {
                         return;
+                    }
+
+                    if (!tile.terrain.IsWater())
+                    {
+                        gameState.ActionStack.Add(new BuildRoadAction(__instance.PlayerId, __instance.Coordinates));
+                        gameState.ActionStack.Add(new UpdateRoutesAction(__instance.PlayerId));
+                        // 1. 先建立 IL2CPP 的 List 實例
+                        var playerIdList = new Il2CppSystem.Collections.Generic.List<byte>();
+                        // 2. 使用 Add 方法加入資料
+                        playerIdList.Add(__instance.PlayerId);
+                        // 3. 傳入方法中
+                        gameState.ActionStack.Add(new UpdateCityConnectionsAction(__instance.PlayerId, playerIdList));
                     }
 
                     TileData cityTile = GameManager.GameState.Map.GetTile(tile.rulingCityCoordinates);
@@ -1199,8 +1209,8 @@ namespace Conquest
             {
                 __result = 40;
             }
-
-            if (tile != null && tile?.improvement?.type == EnumCache<ImprovementData.Type>.GetType("citadel") && tile.terrain.IsWater() && tile?.unit?.UnitData.attack <= 30 && tile.owner == unit.owner)
+            
+            if (tile != null && tile?.improvement?.type == EnumCache<ImprovementData.Type>.GetType("citadel") && tile.terrain.IsWater() && unit.UnitData.type == UnitData.Type.Rammership && tile.owner == unit.owner)
             {
                 __result = 40;
             }
@@ -1234,17 +1244,14 @@ namespace Conquest
         {
             Il2CppSystem.Collections.Generic.List<TrainCommand> list = new Il2CppSystem.Collections.Generic.List<TrainCommand>();
             if (tile.improvement != null && tile.improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel"))
+            {
+                if (tile.owner != player.Id)
                 {
-                    if (tile.owner != player.Id)
-                    {
-                        return;
-                    }
+                    return;
+                }
 
-                    if (tile.terrain == TerrainData.Type.Water || tile.terrain == TerrainData.Type.Ocean)
-                    {
-                        return;
-                    }
-
+                if (!tile.terrain.IsWater())
+                {
                     foreach (UnitData unitData in gameState.GameLogicData.GetUnlockedUnits(player, gameState, false))
                     {
                         if (CommandValidation.HasUnitTerrain(gameState, tile.coordinates, unitData) && unitData.cost < 8)
@@ -1256,9 +1263,112 @@ namespace Conquest
                             }
                         }
                     }
-                    __result = list;
-                    return;
                 }
+                else
+                {
+                    foreach (UnitData unitData in gameState.GameLogicData.GetUnlockedUnits(player, gameState, true))
+                    {
+                        Loader.modLogger?.LogInfo($"[Conquest-Train] Found water citadel");
+                        if (CommandValidation.HasUnitTerrain(gameState, tile.coordinates, unitData) && unitData.type == UnitData.Type.Rammership)
+                        {
+                            Loader.modLogger?.LogInfo($"[Conquest-Train] Passed type check");
+                            TrainCommand trainCommand = new TrainCommand(player.Id, unitData.type, tile.coordinates);
+                            if (!player.blockTrainUnits && (includeUnavailable || trainCommand.IsValid(gameState)))
+                            {
+                                list.Add(trainCommand);
+                                Loader.modLogger?.LogInfo($"[Conquest-Train] Passed validation");
+                            }
+                        }
+                    }
+                }
+                __result = list;
+                return;
+            }
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(TrainCommand), nameof(TrainCommand.IsValid))]
+        public static void IsValid_CitadelTrain(TrainCommand __instance, GameState state, ref bool __result, out string validationError)
+        {
+            try
+            {
+                if (!__instance.PassesBasicValidation(state, out validationError))
+                {
+                    __result = false;
+                    //return false;
+                }
+                PlayerState playerState;
+                if (!state.TryGetPlayer(__instance.PlayerId, out playerState))
+                {
+                    validationError = "Player does not exist";
+                    __result = false;
+                    //return false;
+                }
+                UnitData unitData;
+                if (!state.GameLogicData.TryGetData(__instance.Type, out unitData))
+                {
+                    validationError = "Missing unit data";
+                    __result = false;
+                    //return false;
+                }
+                if (!playerState.CanAfford(unitData))
+                {
+                    validationError = "Not enough resources";
+                    __result = false;
+                    //return false;
+                }
+                TileData tile = state.Map.GetTile(__instance.Coordinates);
+                if (state.Settings.RulesGameMode == EnumCache<GameMode>.GetType("conquest")
+                    || state.Settings.RulesGameMode == EnumCache<GameMode>.GetType("reign"))
+                {
+                    if (tile.improvement != null && tile.terrain.IsWater() && tile.improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel"))
+                    {
+                        Loader.modLogger?.LogInfo($"[Conquest-Train] Overrided Water Citadel Train IsValid.");
+                    }
+                    else
+                    {
+                        if (!playerState.CanTrainUnit(state, __instance.Type))
+                        {
+                            validationError = "Not unlocked";
+                            __result = false;
+                            //return false;
+                        }
+                    }
+                }
+                else if (!playerState.CanTrainUnit(state, __instance.Type))
+                {
+                    validationError = "Not unlocked";
+                    __result = false;
+                    //return false;
+                }
+                if (!CommandValidation.HasUnitTerrain(state, __instance.Coordinates, unitData))
+                {
+                    validationError = "Unit can't move to any surrounding tile";
+                    __result = false;
+                    //return false;
+                }
+                if (CommandValidation.HasUnit(state, __instance.Coordinates))
+                {
+                    validationError = "Tile is occupied by unit";
+                    __result = false;
+                    //return false;
+                }
+                if (!unitData.HasAbility(UnitAbility.Type.Independent) && !CommandValidation.CanCitySupportUnit(state, __instance.Coordinates))
+                {
+                    validationError = "City can't support more units";
+                    __result = false;
+                    //return false;
+                }
+                validationError = "";
+                __result = true;
+                //return false;
+            }
+            catch (Exception ex)
+            {
+                validationError = $"[Conquest-Train] Error in TrainCommand validation Postfix: {ex}";
+                Loader.modLogger?.LogError($"{validationError}");
+                //return true;
+            }
         }
 
         [HarmonyPostfix]
@@ -1562,7 +1672,8 @@ namespace Conquest
             return true;
         }*/
 
-        [HarmonyPostfix]
+        //Forget about this
+        /*[HarmonyPostfix]
         [HarmonyPatch(typeof(TileData), nameof(TileData.isValidBridgeAnchor))]
         private static void isValidBridgeAnchor_Citadel(TileData tile, PlayerState player, GameState gameState, ref bool __result)
         {
@@ -1578,7 +1689,14 @@ namespace Conquest
                 return;
             }
             __result = tile != null && !tile.IsWater && player != null;
-        }
+        }*/
+
+        /*[HarmonyPostfix]
+        [HarmonyPatch(typeof(ActionUtils), nameof(ActionUtils.TrainUnit))]
+        private static void TrainUnit_WaterCitadel(GameState gameState, PlayerState playerState, TileData tile, UnitData unitData)
+        {
+            
+        }*/
 
         [HarmonyPostfix]
         [HarmonyPatch(typeof(PathFinder), nameof(PathFinder.IsTileAccessible))]
@@ -1597,7 +1715,7 @@ namespace Conquest
             }
         }
 
-        [HarmonyPrefix]
+        /*[HarmonyPrefix]
         [HarmonyPatch(typeof(MoveAction), nameof(MoveAction.ExecuteDefault))]
         private static bool MoveAction_WaterCitadelEmbark(MoveAction __instance, GameState gameState)
         {
@@ -1633,10 +1751,10 @@ namespace Conquest
 
             if (tile.terrain.IsWater() && tile.improvement.type == EnumCache<ImprovementData.Type>.GetType("citadel"))
             {
-                /*if (tile.unit.passengerUnit != null)
+                if (tile.unit.passengerUnit != null)
                 {
 				    gameState.ActionStack.Add(new DisembarkAction(__instance.PlayerId, worldCoordinates));
-                }*/
+                }
 
                 gameState.TryGetPlayer(__instance.PlayerId, out playerState);    
                 UnitState cache = tile2.unit;
@@ -1663,9 +1781,9 @@ namespace Conquest
                 return false;
             }
             return true;
-        }
+        }*/
 
-        [HarmonyPostfix]
+        /*[HarmonyPostfix]
         [HarmonyPatch(typeof(UnitDataExtensions), nameof(UnitDataExtensions.GetAllowedTerrain))]
         private static void GetAllowedTerrain_CitadelRammership(UnitState unit, GameState state, ref Il2CppSystem.Collections.Generic.List<TerrainData>? __result)
         {
@@ -1681,9 +1799,9 @@ namespace Conquest
 				}
                 __result = list;
             }
-        }
+        }*/
 
-        [HarmonyPostfix]
+        /*[HarmonyPostfix]
         [HarmonyPatch(typeof(BattleHelpers), nameof(BattleHelpers.GetBattleResults))]
         private static void GetBattleResults_CitadelRammership(GameState gameState, UnitState attackingUnit, UnitState defendingUnit, ref BattleResults __result)
         {
@@ -1693,57 +1811,57 @@ namespace Conquest
             {
                 __result.shouldMoveToDefeatedEnemyTile = false;
             }
-        }
+        }*/
 
         // =========================================================================
         // G. Citadel Logics (capture)
         // =========================================================================
-        [HarmonyPrefix]
+        [HarmonyPostfix]
         [HarmonyPatch(typeof(CaptureCommand), nameof(CaptureCommand.IsValid))]
-        private static bool IsValid_CitadelCapture(CaptureCommand __instance, GameState state, ref bool __result, out string validationError)
+        private static void IsValid_CitadelCapture(CaptureCommand __instance, GameState state, ref bool __result, out string validationError)
         {
             try
             {
                 if (!__instance.PassesBasicValidation(state, out validationError))
                 {
                     __result = false;
-                    return false;
+                    //return false;
                 }
                 TileData tile = state.Map.GetTile(__instance.Coordinates);
                 if (tile == null)
                 {
                     validationError = "Missing tile";
                     __result = false;
-                    return false;
+                    //return false;
                 }
                 if (!tile.HasImprovement(ImprovementData.Type.City) && !tile.HasImprovement(EnumCache<ImprovementData.Type>.GetType("citadel")) )
                 {
                     validationError = "Missing city or citadel";
                     __result = false;
-                    return false;
+                    //return false;
                 }
                 UnitState unitState;
                 if (!state.TryGetUnit(__instance.UnitId, out unitState))
                 {
                     validationError = "Tile is missing unit";
                     __result = false;
-                    return false;
+                    //return false;
                 }
                 if (!unitState.CanCapture(state, tile, false, true))
                 {
                     validationError = "Can't capture";
                     __result = false;
-                    return false;
+                    //return false;
                 }
                 validationError = "";
                 __result = true;
-                return false;
+                //return false;
             }
             catch (Exception ex)
             {
                 validationError = $"[Conquest-Capture] Error in CaptureCommand validation: {ex}";
                 Loader.modLogger?.LogError($"{validationError}");
-                return true;
+                //return true;
             }
         }
 
@@ -2043,6 +2161,10 @@ namespace Conquest
                     && territoryTile.improvement.type != ImprovementData.Type.LightHouse)
                 {
                     territoryTile.improvement = null;
+                    if (territoryTile.improvement != null && territoryTile.improvement.type == ImprovementData.Type.Bridge && territoryTile.unit != null && !territoryTile.unit.HasAbility(UnitAbility.Type.Swim) && !territoryTile.unit.HasAbility(UnitAbility.Type.Fly))
+                    {
+			            gameState.ActionStack.Add(new KillUnitAction(originalOwner.Id, territoryTile.coordinates));
+                    }
                 }
 
                 territoryTile.owner = 0;
