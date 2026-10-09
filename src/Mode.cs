@@ -296,7 +296,7 @@ namespace PolyMode
                         {
                             foreach (string item in req.mode)
                             {
-                                if (GameManager.PreliminaryGameSettings.RulesGameMode == EnumCache<GameMode>.GetType(item))
+                                if (GameManager.GameState.Settings.RulesGameMode == EnumCache<GameMode>.GetType(item))
                                 {
                                     modeMatch = true;
                                     break;
@@ -544,34 +544,151 @@ namespace PolyMode
             }
         }    
 
-        /*[HarmonyPostfix]
-        [HarmonyPatch(typeof(CityStatusNameContainer), nameof(CityStatusNameContainer.SetCity))]
-        private static void SetCity_ChangeWorkIcon(CityStatusNameContainer __instance, global:: City city)
-        {
-            if (__instance.workContainer != null && __instance.workContainer.gameObject.activeSelf && __instance.workIcon != null)
-            {
-                __instance.workIcon.sprite = PolyMod.Registry.GetSprite("taxreform"); 
-
-                __instance.UpdateSize();
-            }
-        }*/ 
+        /*private static Sprite? DefaultWorkStar = null;
+        private static Vector3? DefaultScale = null;
 
         [HarmonyPostfix]
-        [HarmonyPatch(typeof(CommandUtils), nameof(CommandUtils.GetTrainableUnits))]
-        private static void DenyTrainableUnits_TaxReform(GameState gameState, PlayerState player, TileData tile, ref Il2CppSystem.Collections.Generic.List<TrainCommand> __result, bool includeUnavailable = false)
+        [HarmonyPatch(typeof(CityStatusNameContainer), nameof(CityStatusNameContainer.SetCity))]
+        private static void SetCity_TaxReformWorkColor(CityStatusNameContainer __instance, City city)
         {
-            if (tile.owner != player.Id)
+            try
             {
-                return;
-            }
+                if (__instance == null) return;
 
-            if (!tile.improvement.HasReward(EnumCache<CityReward>.GetType("taxreform")))
+                var icon = __instance.workIcon;
+                var label = __instance.workLabel;
+                if (icon == null) return;
+
+                // 1. 強制重置縮放，洗去歷史殘留
+                if (DefaultScale == null) DefaultScale = icon.transform.localScale;
+                else icon.transform.localScale = DefaultScale.Value; 
+
+                if (DefaultWorkStar == null && icon.sprite != null) DefaultWorkStar = icon.sprite;
+
+                CityReward taxReformEnum = EnumCache<CityReward>.GetType("taxreform");
+                bool taxReform = city?.Tile?.Data?.improvement != null
+                    && city.Tile.Data.improvement.HasReward(taxReformEnum);
+
+                if (taxReform)
+                {
+                    if (__instance.workContainer != null) __instance.workContainer.gameObject.SetActive(true);
+                    icon.gameObject.SetActive(true);
+                    icon.enabled = true;
+
+                    if (label != null && !label.gameObject.activeSelf) label.gameObject.SetActive(true);
+
+                    // 2. 撈取你已經準備好的實心無透明度銀星貼圖
+                    Sprite? rawSprite = null;
+                    try { rawSprite = PolyMod.Registry.GetSprite("taxreform", "", 0); } catch { }
+
+                    if (rawSprite != null)
+                    {
+                        // 💡 【核心修正】直接套用原始貼圖，但強行賦予它一個正當的名字
+                        // 徹底解除 Unity 因為貼圖名字為空、判定資產無效而渲染出大黑星的錯誤
+                        rawSprite.name = "TaxReform_Star";
+                        icon.sprite = rawSprite; 
+                    }
+                    else if (DefaultWorkStar != null)
+                    {
+                        icon.sprite = DefaultWorkStar; 
+                    }
+
+                    // 顏色與材質完全保持原生的純白色，展現你自訂實心銀星貼圖的原色
+                    icon.color = Color.white;
+                    try { if (icon.material != null) icon.material.color = Color.white; } catch { }
+
+                    // 3. 等比例尺寸計算，精準對齊原生 UI 大小
+                    if (icon.sprite != null && __instance.leftIconBackground != null && __instance.leftIconBackground.sprite != null)
+                    {
+                        Vector2 mySize = icon.sprite.rect.size;
+                        float bgX = __instance.leftIconBackground.sprite.rect.size.x;
+                        float targetScale = bgX * icon.sprite.pixelsPerUnit / (mySize.x * __instance.leftIconBackground.sprite.pixelsPerUnit) * __instance.leftIconBackground.transform.localScale.x;
+                        icon.transform.localScale = new Vector3(targetScale, targetScale, 1f);
+                    }
+
+                    // ---- DEBUG 報告 ----
+                    Loader.modLogger?.LogInfo(
+                        $"[TaxReform-UI] Final Test:\n" +
+                        $"  工作量數字={label?.text}\n" +
+                        $"  圖標貼圖={(icon.sprite != null ? icon.sprite.name : "NULL")} | 實際縮放={icon.transform.localScale}"
+                    );
+
+                    // 4. 刷新原生排版
+                    var isWorkLabelDirtyField = __instance.GetType().GetField("isWorkLabelDirty", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                    if (isWorkLabelDirtyField != null) isWorkLabelDirtyField.SetValue(__instance, true);
+
+                    if (__instance.gameObject != null) __instance.gameObject.SetActive(true);
+                    var updateSizeMethod = __instance.GetType().GetMethod("UpdateSize", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                    if (updateSizeMethod != null) updateSizeMethod.Invoke(__instance, null);
+                }
+                else
+                {
+                    // 還原邏輯
+                    if (DefaultWorkStar != null) icon.sprite = DefaultWorkStar;
+                    if (DefaultScale != null) icon.transform.localScale = DefaultScale.Value;
+                    icon.color = Color.white;
+
+                    int work = 0;
+                    if (city?.Tile?.Data?.improvement != null)
+                    {
+                        try { work = city.Tile.Data.CalculateWork(GameManager.GameState, GameManager.LocalPlayer, (int)city.Tile.Data.improvement.level); } catch { }
+                        if (work <= 0 && __instance.workContainer != null) __instance.workContainer.gameObject.SetActive(false);
+                    }
+                }
+            }
+            catch (Exception ex)
             {
-                return;
+                Loader.modLogger?.LogError($"[Conquest-Work] {ex}");
             }
+        }*/
 
-            __result = new Il2CppSystem.Collections.Generic.List<TrainCommand>();
-            return;
+        [HarmonyPostfix]
+        [HarmonyPriority(Priority.Last)]
+        [HarmonyPatch(typeof(CommandUtils), nameof(CommandUtils.GetTrainableUnits))]
+        private static void DenyTrainableUnits_TaxReform(
+            GameState gameState,
+            PlayerState player,
+            TileData tile,
+            ref Il2CppSystem.Collections.Generic.List<TrainCommand> __result,
+            bool includeUnavailable = false)
+        {
+            try
+            {
+                if (gameState?.Map == null || player == null || tile == null)
+                    return;
+
+                if (tile.owner != player.Id)
+                    return;
+
+                // Already empty — nothing to deny
+                if (__result == null || __result.Count == 0)
+                    return;
+
+                var taxReform = EnumCache<CityReward>.GetType("taxreform");
+
+                // 1) This city tile itself has Tax Reform
+                if (tile.improvement != null && tile.improvement.HasReward(taxReform))
+                {
+                    __result = new Il2CppSystem.Collections.Generic.List<TrainCommand>();
+                    return;
+                }
+
+                // 2) Ruling city of Citadel has Tax Reform
+                /*if (tile.rulingCityCoordinates == WorldCoordinates.NULL_COORDINATES) return;
+
+                TileData cityTile = gameState.Map.GetTile(tile.rulingCityCoordinates);
+                if (cityTile?.improvement == null) return;
+
+                if (cityTile.improvement.HasReward(taxReform))
+                {
+                    __result = new Il2CppSystem.Collections.Generic.List<TrainCommand>();
+                    return;
+                }*/
+            }
+            catch (Exception ex)
+            {
+                Loader.modLogger?.LogError($"[Conquest-Train] DenyTrainableUnits_TaxReform: {ex}");
+            }
         }
 
         // =========================================================================

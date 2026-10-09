@@ -247,7 +247,7 @@ namespace Rush
             }
             catch (Exception ex)
             {
-                Loader.modLogger?.LogError($"[Conquest-Tech] Error: {ex.Message}");
+                Loader.modLogger?.LogError($"[Rush-Tech] Error: {ex.Message}");
             }
         }
     }

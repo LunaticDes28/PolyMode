@@ -72,30 +72,6 @@
 		}
 	},
     "improvementData":{
-		"clearforest": {
-			"terrainRequirements": [
-				{
-					"terrain": "forest"
-				}
-			],
-			"creates": [
-				{
-					"terrain": "field"
-				}
-			],
-			"improvementAbilities": [
-				"consumed",
-				"freelance",
-				"freemanual"
-			],
-			"maxLevel": 0,
-			"rewards": [
-				{
-					"currency": 2
-				}
-			],
-			"idx": 10
-		},
 		"citadel": {
 			"cost": 20,
 			"terrainRequirements": [

@@ -30,7 +30,7 @@
         "English": "Rush (Star)"
     },
     "gamemode_rusha_description": {
-        "English": "Rush toward the throne of the Square. Become the king before time's up."
+        "English": "Rush toward the throne of the Square. Become the king before the end of contest."
     },
     "gamemode_goal_rusha_description": {
         "English": "Rush for the wealth glory."
@@ -51,7 +51,7 @@
         "English": "Rush (Army)"
     },
     "gamemode_rushb_description": {
-        "English": "Rush toward the throne of the Square. Become the king before time's up."
+        "English": "Rush toward the throne of the Square. Become the king before the end of contest."
     },
     "gamemode_goal_rushb_description": {
         "English": "Rush for the military glory."
@@ -78,7 +78,7 @@
         "English": "Rush (Tech)"
     },
     "gamemode_rushc_description": {
-        "English": "Rush toward the throne of the Square. Become the king before time's up."
+        "English": "Rush toward the throne of the Square. Become the king before the end of contest."
     },
     "gamemode_goal_rushc_description": {
         "English": "Rush for the civilization glory."
@@ -102,7 +102,7 @@
 		"English": "Citadel"
 	},
     "building_ability_citadel": {
-		"English": "Expands border of its belonging city to its adjacent tiles. You can train units from it and defence bonus is applied."
+		"English": "Expands border of its belonging city to its adjacent tiles. You can train units on it and defence bonus is applied on tile. Only one Citadel can be built per turn for a city."
 	},
     "building_ability_freemanual": {
 		"English": "If you have an actionable unit on the tile."
@@ -117,7 +117,7 @@
 		"English": "Unlocks Citadel on Mountain and provides defence bonus on tile."
 	},    
     "tooltip_ability_watercitadel": {
-		"English": "Unlocks Citadel on Water and provides defence bonus on tile. Units that move here will permanently turn into rammer for free."
+		"English": "Unlocks Citadel on Water and provides defence bonus on tile. Water Citadel can train rammers carrying warriors by default."
 	}, 
     "unit_names_citadelrammership": {
 		"English": "Rammer"
